@@ -95,11 +95,35 @@ model ages).
 
 ### Decision rule
 
+Two independent gates, both required before finalizing:
+
 ```
-r(x) ≥ −band(x)              → consistent with the dominant chain; may finalize
-r(x) <  −band(x), sustained  → minority / partitioned; do NOT finalize,
-                               keep looking for peers that extend the anchor
+stale tip / low work rate       → do NOT finalize; the chain is not keeping up
+r(x) ≥ −band(x)                 → consistent with the dominant chain; may finalize
+r(x) <  −band(x), sustained     → minority / partitioned; do NOT finalize,
+                                  keep looking for peers that extend the anchor
 ```
+
+The first gate is what covers a fork that does **not** change its difficulty
+algorithm.  Such a chain inherits the parent's target, so its difficulty — and
+therefore its residual — still matches the trend; but with a small hash-rate
+share its blocks arrive hours or days apart.  The August 2026 BIP-110 split is
+the clean example: it left Bitcoin at height 961 632 (an exact retarget
+boundary), inherited the new epoch's difficulty, produced two blocks in eight
+hours, then stalled, while its difficulty residual stayed at zero.  Only tip
+age / work rate distinguishes it.
+
+The residual gate covers the opposite case: a fork with a per-block DAA keeps a
+fresh tip by cutting difficulty, which appears as a large negative residual.
+
+The two gates are complementary.  Apply freshness to a trailing window rather
+than a single block — a stalled chain can produce one lucky block with a current
+timestamp, but `Δchainwork / Δt` over the window still exposes the gap — and
+take `τ` as a small multiple of the target block interval.  A quarter of the
+hash rate, the case that used to read as "days–weeks of latency", shows up
+either as a ~4× lower target or as ~40-minute blocks, and a window of headers
+resolves it in hours.  A chain that is merely behind because it is still syncing
+is handled by *not finalizing yet*, not by calling it invalid.
 
 `band` should also be inflated by the time-elapsed-since-last-refit (staleness),
 which is exactly what the `h` axis of `tightness_vs_staleness.png` shows.
@@ -133,6 +157,27 @@ away from the trend without limit.
 That asymmetry — bounded vs unbounded — is what makes the method robust to an
 imperfect or somewhat stale model: you are not asking "does this match exactly",
 you are asking "does this diverge without bound".
+
+### The fork examples are illustrative, not clean controls
+
+BCH, BSV and XEC show the long-run end state — a minority chain far below the
+trend — but none of them is a clean test of a fork that simply *keeps going
+slowly*:
+
+* **BCH** launched in Aug 2017 with an Emergency Difficulty Adjustment (20 %
+  cuts when blocks were slow), replaced in Nov 2017 by a per-block DAA.
+* **BSV** forked from BCH in Nov 2018 already carrying BCH's per-block DAA.
+* **XEC** forked from BCH in Nov 2020 with ASERT (`aserti3-2d`).
+
+Their difficulty therefore falls quickly after the split **by design**, and their
+early residuals measure that policy as much as hash-rate share.  Their long-run
+hash rate also tracks market price, so a low residual is not purely a partition
+effect.  The cleaner natural experiment is the opposite case: a fork that keeps
+inherited difficulty and goes slow — see the BIP-110 split under the decision
+rule, where the residual stays on the trend and only tip age / work rate exposes
+the chain.  That fork stalled after two blocks, so it is not in `data/` (there is
+no series to fit), but it is exactly the case the difficulty-only view would
+miss.
 
 ### Fit tightness required vs staleness — `diagrams/tightness_vs_staleness.png`
 
@@ -178,12 +223,20 @@ Reading it (W = 4y):
 ## 5. Limitations
 
 * **Same PoW only.**  The comparison is meaningless across different PoW.
-* **Detection latency.**  Right after a split a fork's residual is small by
-  construction (it shares the trend), so a *fresh* fork cannot be judged for
-  days–weeks.  This is the same 50/50 problem as any work-based rule.
-* **Staleness.**  Confidence is a decreasing function of years since the last
-  trusted checkpoint; beyond ~2 years a fresh fork may hide in the band, and
-  beyond ~5 years the calibration itself is thin.
+* **Near-even splits.**  Right after a split *every* fork's residual is small by
+  construction (it shares the trend), but that is only a latency for the
+  difficulty channel.  A chain with a small hash-rate share is caught quickly by
+  the tip-age / work-rate gate: it must either cut difficulty (large negative
+  residual) or keep inherited difficulty and produce blocks hours apart (stale
+  tip).  What remains genuinely ambiguous is a fork holding a large share of the
+  hash rate — a near-50/50 split, where both chains produce recent tips at
+  similar difficulty.  That is the same 50/50 problem as any work-based rule.
+* **Staleness.**  Confidence in the *difficulty* band is a decreasing function of
+  years since the last trusted checkpoint: beyond ~2 years a small fork can hide
+  inside it, and beyond ~5 years the calibration itself is thin.  The tip-age /
+  work-rate gate is unaffected, because it needs no trusted model at all — only a
+  clock and the candidate's own headers — which is why the two gates age
+  differently.
 * **Regime shifts.**  BTC difficulty has drawn-downs (2011, 2015, 2018, 2022)
   where the true chain also leaves a tight band; this is why the band is
   calibrated empirically and why "sustained" divergence is required.
@@ -220,7 +273,12 @@ python3 analyze.py              # writes diagrams/*.png and prints the band tabl
 * Move the reference model (`a, b, s, x̄, Sxx, n, fit_end`) into a node's header
   validation path, alongside its trusted-checkpoint handling, together with a
   `calibrate()`-derived `m(W, h)` table, so a node can self-assess a partition.
-* Replace raw difficulty with **cumulative `chainwork`** (the integral of
-  difficulty) for a smoother statistic with the same trend.
-* Quantify **detection latency** as a function of staleness: days after a fork
-  until a chain stays below `−band` for `N` consecutive weeks.
+* Replace instantaneous difficulty with **observed work rate**,
+  `Δchainwork / Δt` over a trailing window (derived from headers, no extra data).
+  Unlike difficulty, this is invariant to the DAA: a fork that lowers difficulty
+  to keep 10-minute blocks and one that keeps inherited difficulty and produces
+  slow blocks both show the same low work rate.  It also makes the tip-age gate
+  statistically robust rather than a single-block check.
+* Quantify **detection latency** for both gates as a function of hash-rate share
+  and staleness: hours until work rate resolves an asymmetric fork, versus the
+  near-50/50 case that stays ambiguous for many blocks.
