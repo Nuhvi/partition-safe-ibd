@@ -1,8 +1,9 @@
-# Trend-based chain justification for header-compatible SHA256d chains
+# partition-safe-ibd
 
-A node that is **network-partitioned** (e.g. it can only reach Bitcoin Cash
-peers) should be able to tell that it *cannot yet finalize* blocks, rather than
-silently following a minority chain.  This folder explores doing that from
+Trend-based chain justification for header-compatible SHA256d chains.  A node
+that is **network-partitioned** (e.g. it can only reach Bitcoin Cash peers)
+should be able to tell that it *cannot yet finalize* blocks, rather than
+silently following a minority chain.  This repo explores doing that from
 **difficulty (hash rate) history alone**, using a trusted header history as a
 reference trend.
 
@@ -41,7 +42,7 @@ comparable.
 
 ## 2. Data
 
-* **BTC** — the checkpoint spine `checkpoints.txt`, copied into this folder from
+* **BTC** — the checkpoint spine `checkpoints.txt`, copied into this repo from
   the parent repo's `crates/core/data/checkpoints.txt`: one header every 2016
   blocks, full history, offline.  (Difficulty is read straight from the `bits`
   field.)
@@ -193,7 +194,7 @@ Reading it (W = 4y):
 ## 6. Files
 
 ```
-trend-finality/
+partition-safe-ibd/
   fetch.py          # download/cache difficulty series -> data/<chain>.json
   analyze.py        # fit, calibrate, and draw all four diagrams
   checkpoints.txt   # trusted BTC header spine (one header per 2016 blocks)

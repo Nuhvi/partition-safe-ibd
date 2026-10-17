@@ -10,7 +10,7 @@ included, because their difficulty / chainwork is directly comparable:
     XEC  eCash (BCHA)   fork 2020-11-15 @ 661648 (from BCH)
 
 Sources:
-  * BTC  - the checkpoint spine `checkpoints.txt` (copied into this folder):
+  * BTC  - the checkpoint spine `checkpoints.txt` (copied into this repo):
            one header every 2016 blocks, full history, no network needed.
   * BCH / XEC - the Blockchair API (free tier: <=30 requests / 60 s, so throttled).
   * BSV  - a public Bitcoin SV JSON-RPC node.
@@ -54,7 +54,7 @@ class Throttle:
 
 def _get(url, timeout=40):
     req = urllib.request.Request(url, headers={
-        "User-Agent": "Mozilla/5.0 (compatible; trend-finality/1.0)",
+        "User-Agent": "Mozilla/5.0 (compatible; partition-safe-ibd/1.0)",
         "Accept": "application/json",
     })
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -83,7 +83,7 @@ def rpc(url, method, *params):
                        "params": list(params)}).encode()
     req = urllib.request.Request(url, body, {
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (compatible; trend-finality/1.0)",
+        "User-Agent": "Mozilla/5.0 (compatible; partition-safe-ibd/1.0)",
     })
     with urllib.request.urlopen(req, timeout=40) as r:
         out = json.loads(r.read())
