@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Canonical finality rule: grade work since the trusted anchor.
 
-This is the entry point the README's decision rule (§3) describes.  It owns the
+This is the entry point the README's decision rule describes.  It owns the
 statistic, the calibration and the decision, so a node does not have to reassemble
 them:
 
@@ -175,7 +175,7 @@ def floor_work(e):
 
 
 def decide(anchor_time, cand_work, t_now, W, band_fn=None):
-    """Apply the §3 rule.  Returns (ok, reason, q, band)."""
+    """Apply the finality rule.  Returns (ok, reason, q, band)."""
     band_fn = band_fn or band
     T = t_now - anchor_time
     if T <= 0:

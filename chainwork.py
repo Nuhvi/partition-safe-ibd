@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report and figures for the chainwork rule (README §7).
+"""Report and figures for the work-since-anchor rule (see README §2).
 
 The statistic, calibration and decision live in finality.py; this module only
 prints the tables and draws diagrams/chainwork_band.png and
@@ -188,7 +188,7 @@ def fig_grid(W=4.0, Ss=(0.5, 1, 2, 3, 4, 6, 8),
         ax.set_xlabel("node start year"); ax.set_ylabel("checkpoint staleness (years)")
         ax.set_title(title, fontsize=10)
         fig.colorbar(im, ax=ax, fraction=0.046)
-    fig.suptitle("Start grid on the chainwork statistic (README §7)")
+    fig.suptitle("Start grid on the work-since-anchor rule")
     fig.tight_layout(); fig.savefig(path, dpi=130); plt.close(fig)
     print(f"wrote {path}")
 
