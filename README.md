@@ -103,9 +103,6 @@ finality.py          # the rule: statistic, isotonic band, decide()
 chainwork.py         # report and figures for the rule
 simulate.py          # detection-latency backtest
 attack_sim.py        # block-level attacker under the real retarget path
-analyze.py           # difficulty-trend fits and their four diagrams
-calibration_audit.py # calibration support, coverage, false positives
-attack_cost.py       # closed-form forged-chain cost by staleness
 checkpoints.txt      # trusted BTC header spine
 data/  diagrams/     # cached series and generated PNGs
 ```
@@ -113,12 +110,9 @@ data/  diagrams/     # cached series and generated PNGs
 ```sh
 python3 fetch.py            # BTC offline; BCH/XEC Blockchair; BSV a public node
 python3 finality.py         # bands, live decision, envelopes
-python3 chainwork.py        # bands, coverage, attack cost, grid figures
+python3 chainwork.py        # bands, coverage, attack cost, grid figure
 python3 simulate.py         # detection-latency backtest
 python3 attack_sim.py       # attacker under the retarget path
-python3 analyze.py          # difficulty-trend diagrams
-python3 calibration_audit.py
-python3 attack_cost.py
 ```
 
 Install: `python3 -m venv .venv && . .venv/bin/activate && pip install matplotlib`.

@@ -17,26 +17,54 @@ them:
     reject if  q  < -band(W, h)              h = T in years
     accept otherwise
 
-`band` is calibrated on q for the true chain and made non-decreasing in h by
-**isotonic regression** (PAVA) rather than a running max.  For this statistic the
-raw band is already almost monotone, so the two agree closely; the running max
-mattered for the retired tip-difficulty band, where a noisy estimate at one h
-inflated every larger h.
+`band` is calibrated on `q` for the true chain and made non-decreasing in `h`
+by **isotonic regression** (PAVA) rather than a running max; the fit is global
+over the staleness grid, so the band cannot shrink as the checkpoints age.
 
 Usage:  python3 finality.py [W] [h_years]
 """
+import json
 import math
+import os
 import random
 import sys
 
-from analyze import load, fit, predict, denom, coverage_ratio, YEAR
+HERE = os.path.dirname(os.path.abspath(__file__))
+DATA = os.path.join(HERE, "data")
+GEN, YEAR = 1231006505, 31557600.0
 
 WORK = 2 ** 32
 TARGET = 600.0                 # seconds per block
 TH_DAY = 1e12 * 86400          # hashes per (TH/s * day)
 HASHPRICE = 0.04               # USD per TH/s per day
 MIN_SUPPORT = 8                # refuse to trust a band from fewer windows
-YEAR_SECONDS = YEAR
+
+
+def load(chain):
+    rows = json.load(open(os.path.join(DATA, f"{chain}.json")))
+    return [((t - GEN) / YEAR, math.log10(d), h, t) for h, t, d in rows if d > 0]
+
+
+def fit(e, W, pts):
+    """OLS of log10(difficulty) on log10(years) over the trailing W years to e."""
+    tr = [(math.log10(x), y) for x, y, _, _ in pts if x > 0 and e - W <= x <= e]
+    n = len(tr)
+    if n < 6:
+        return None
+    mx = sum(x for x, _ in tr) / n
+    my = sum(y for _, y in tr) / n
+    Sxx = sum((x - mx) ** 2 for x, _ in tr)
+    if Sxx <= 0:
+        return None
+    b = sum((x - mx) * (y - my) for x, y in tr) / Sxx
+    a = my - b * mx
+    s = math.sqrt(max(sum((y - (a + b * x)) ** 2 for x, y in tr) / (n - 2), 1e-12))
+    return {"a": a, "b": b, "s": s, "Sxx": Sxx, "mx": mx, "n": n}
+
+
+def predict(model, x):
+    return model["a"] + model["b"] * math.log10(x)
+
 
 BTC = load("BTC")
 X_NOW = BTC[-1][0]
@@ -211,30 +239,8 @@ def envelope(W, cap, band_fn=None):
     return best
 
 
-def envelope_diff(W, cap):
-    """Same envelope for the retired tip-difficulty statistic, for comparison."""
-    from analyze import m_band
-    best = None
-    for h in H_GRID:
-        rs = coverage_ratio(W, h, BTC)
-        if not rs:
-            continue
-        cal = sorted(r for t, r in rs if t <= 2020.0)
-        ev = [r for t, r in rs if t > 2020.0]
-        if len(cal) < 3 or not ev:
-            continue
-        cov = sum(r <= cal[int(0.95 * (len(cal) - 1))] for r in ev) / len(ev)
-        b = m_band(W, h, BTC)
-        e = X_NOW - h
-        model = fit(e, W, BTC)
-        if cov >= 0.95 and b <= cap and \
-                BTC[-1][1] - predict(model, X_NOW) >= -(b * denom(model, X_NOW)):
-            best = (h, b, cov)
-    return best
-
-
 def envelope_report():
-    lines = ["=== operating envelope (chainwork statistic) ===",
+    lines = ["=== operating envelope (band <= 1.0 / 2.0 dex) ===",
              "%-6s %-26s %-26s" % ("W", "band <= 1.0 dex", "band <= 2.0 dex")]
     for W in (2.0, 4.0, 8.0):
         cells = []
@@ -243,11 +249,6 @@ def envelope_report():
             cells.append("none" if not r else
                          f"h<={r[0]:g}y (band {r[2]:.2f}, cov {r[3]:.0%}, n={r[1]})")
         lines.append("%-6s %-26s %-26s" % (f"{W:g}y", *cells))
-    lines.append("=== same envelope, tip-difficulty statistic (band <= 2.0 dex) ===")
-    for W in (2.0, 4.0, 8.0):
-        r = envelope_diff(W, 2.0)
-        lines.append("  W=%gy: %s" % (W, "none" if not r else
-                                      f"h<={r[0]:g}y (band {r[1]:.2f}, cov {r[2]:.0%})"))
     return "\n".join(lines)
 
 

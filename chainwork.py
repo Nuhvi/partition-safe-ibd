@@ -2,16 +2,14 @@
 """Report and figures for the work-since-anchor rule (see README §2).
 
 The statistic, calibration and decision live in finality.py; this module only
-prints the tables and draws diagrams/chainwork_band.png and
-diagrams/chainwork_grid.png.
+prints the tables and draws diagrams/chainwork_grid.png.
 
 Usage:  python3 chainwork.py [W ...]     (default 2 4 8)
 """
 import math
 import sys
 
-from analyze import load, fit, predict, denom, m_band
-from finality import (BTC, X_NOW, H_NOW, WORK, HASHPRICE, MIN_SUPPORT, usd,
+from finality import (BTC, X_NOW, H_NOW, WORK, HASHPRICE, usd, load, fit,
                       work_between, trend_work, q_at, q_samples, band_raw,
                       band, band_ci, floor_work, envelope_report)
 
@@ -34,14 +32,13 @@ def main():
             cells.append(f"{raw:.2f}->{g:.2f}" if raw is not None else "n/a")
         print("%-6s %s" % (f"{W:g}y", "".join("%-13s" % c for c in cells)))
 
-    print("\n=== support and band interval (bootstrap 5-95%%; MIN_SUPPORT=%d) ===" % MIN_SUPPORT)
+    print("\n=== support and band interval (bootstrap 5-95%%) ===")
     print("%-6s %-5s %-5s %-9s %-16s %s" % ("W", "h", "n", "band", "interval", "verdict"))
     for W in WS:
         for h in (0.5, 1, 2, 4, 10):
-            vals = q_samples(W, h)
-            n = len(vals)
+            n = len(q_samples(W, h))
             ci = band_ci(W, h)
-            verdict = "ok" if n >= MIN_SUPPORT else "THIN (do not trust)"
+            verdict = "ok" if n >= 8 else "thin"
             ci_s = "-" if ci is None else f"[{ci[0]:.2f}, {ci[1]:.2f}]"
             print("%-6s %-5g %-5d %-9.2f %-16s %s"
                   % (f"{W:g}y", h, n, band(W, h), ci_s, verdict))
@@ -76,65 +73,27 @@ def main():
                   % (W, h, fp, len(rs), b, live, tag))
 
     print("\n=== attacker cost at the band edge (%g $/TH/day) ===" % HASHPRICE)
-    print("%-6s %-5s %-14s %-14s %-14s %-10s" %
-          ("W", "h", "tip band", "tip 1 block", "cw band", "cw interval"))
+    print("%-6s %-5s %-14s %-14s" % ("W", "h", "interval work", "network-days"))
     for W in (4.0,):
         for h in (0.5, 1, 2, 4):
             e = X_NOW - h
             model = fit(e, W, BTC)
-            bd = m_band(W, h, BTC) * denom(model, X_NOW)
-            d_edge = 10 ** (predict(model, X_NOW) - bd)
-            bq = band(W, h)
-            tr = trend_work(model, e, X_NOW)
-            cw = max(tr / 10 ** bq, floor_work(e))
-            print("%-6s %-5g %-14s %-14s %-14s %-10s" %
-                  (f"{W:g}y", h, f"{bd:.2f} dex", f"${usd(d_edge * WORK):,.0f}",
-                   f"{bq:.2f} dex", f"${usd(cw):,.0f}"))
+            cw = max(trend_work(model, e, X_NOW) / 10 ** band(W, h), floor_work(e))
+            print("%-6s %-5g %-14s %-14.1f"
+                  % (f"{W:g}y", h, f"${usd(cw):,.0f}", cw / (H_NOW * 86400)))
     print("\nfor scale: 1 day of Bitcoin's present hash rate = $%s"
           % f"{usd(H_NOW * 86400):,.0f}")
     print("\n" + envelope_report())
 
     try:
-        plot()
         fig_grid()
     except ImportError:
         pass
 
 
-def plot(path="diagrams/chainwork_band.png"):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    hs = [0.5 * i for i in range(1, 21)]
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
-    for W in WS:
-        ax1.plot(hs, [band(W, h) for h in hs], marker="o", ms=3, label=f"W={W:g}y")
-    ax1.set_xlabel("staleness h (years)"); ax1.set_ylabel("one-sided band (dex)")
-    ax1.set_title("chainwork band vs staleness (isotonic)")
-    ax1.grid(alpha=0.25); ax1.legend()
-
-    W = 4.0
-    tips, cw = [], []
-    for h in hs:
-        e = X_NOW - h
-        model = fit(e, W, BTC)
-        bd = m_band(W, h, BTC) * denom(model, X_NOW)
-        tips.append(usd(10 ** (predict(model, X_NOW) - bd) * WORK))
-        cw.append(usd(max(trend_work(model, e, X_NOW) / 10 ** band(W, h), floor_work(e))))
-    ax2.semilogy(hs, tips, marker="o", ms=3, label="tip difficulty, one block")
-    ax2.semilogy(hs, cw, marker="s", ms=3, label="chainwork over interval")
-    ax2.set_xlabel("staleness h (years)"); ax2.set_ylabel("attacker cost (USD)")
-    ax2.set_title(f"cost to sit at the band edge (W={W:g}y, ${HASHPRICE}/TH/day)")
-    ax2.grid(which="both", alpha=0.25); ax2.legend()
-
-    fig.tight_layout(); fig.savefig(path, dpi=130); plt.close(fig)
-    print(f"\nwrote {path}")
-
-
 def fig_grid(W=4.0, Ss=(0.5, 1, 2, 3, 4, 6, 8),
              starts=(2018, 2020, 2022, 2024, 2026), path="diagrams/chainwork_grid.png"):
-    """The start grid, on the chainwork statistic, worst-case fork + true chain.
+    """The start grid: worst-case fork margin and the true chain.
 
     A fork is judged only when its sampled series spans the whole anchor->start
     interval; otherwise the cell is left blank (that anchor cannot see it).
