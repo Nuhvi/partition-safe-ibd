@@ -99,6 +99,37 @@ def calibrate(W, hs, btc):
     return out
 
 
+def m_band(W, h, btc, grid_max=10.0, step=0.5):
+    """Calibrated m(W, h), evaluated on the full staleness grid.
+
+    calibrate() enforces "a band cannot shrink as the model ages" by taking a
+    running max over the staleness values it is handed.  Calling it with a
+    single h skips that guard and understates the band at large h, so every
+    caller should go through here (or the same grid) to stay consistent.
+    """
+    hs = sorted({round(i * step, 6) for i in range(int(round(grid_max / step)) + 1)} | {h})
+    return calibrate(W, hs, btc)[h]
+
+
+def coverage_ratio(W, h, btc):
+    """(test time, |residual| / raw single-h band) for every fit window.
+
+    Small ratios mean the true chain stayed inside the band; a ratio > 1 means
+    the model would have flagged the dominant chain itself.
+    """
+    out = []
+    e = 1.0 + W
+    while e <= btc[-1][0] - h:
+        m = fit(e, W, btc)
+        if m:
+            y = next_btc(btc, e + h)
+            d = denom(m, e + h)
+            if y is not None and d > 0:
+                out.append((2009.0 + e + h, abs(y - predict(m, e + h)) / d))
+        e += 0.5
+    return sorted(out)
+
+
 # ---------------------------------------------------------------- diagrams
 def fig_loglog():
     fig, ax = plt.subplots(figsize=(11, 6.5))
@@ -184,14 +215,10 @@ def fig_tightness(Ws=(2.0, 4.0, 8.0), maxh=10.0):
 
 def fig_start_grid(W=4.0, Ss=(0, 1, 2, 3, 4, 6, 8), starts=(2014, 2016, 2018, 2020, 2022, 2024, 2026)):
     btc = load("BTC")
-    hs = [i * 0.5 for i in range(0, 21)]
-    mcal = calibrate(W, hs, btc)
 
     def m_of(h):
-        # nearest calibrated staleness
-        h = min(max(h, 0), max(hs))
-        near = min(hs, key=lambda k: abs(k - h))
-        return mcal[near]
+        # same guarded value used by attack_cost.py and calibration_audit.py
+        return m_band(W, h, btc)
 
     band = [[float("nan")] * len(starts) for _ in Ss]
     margin = [[float("nan")] * len(starts) for _ in Ss]
@@ -213,7 +240,7 @@ def fig_start_grid(W=4.0, Ss=(0, 1, 2, 3, 4, 6, 8), starts=(2014, 2016, 2018, 20
                 if not xs:
                     continue
                 y = xs[-1][1]
-                sep = max(sep, predict(mod, x0) - y)  # how far *below* trend
+                sep = max(sep, predict(mod, x0) - y)  # best-case fork; worst-case is in calibration_audit.py
             if sep > 0:
                 margin[i][j] = sep - b
 

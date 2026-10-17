@@ -109,9 +109,10 @@ algorithm.  Such a chain inherits the parent's target, so its difficulty — and
 therefore its residual — still matches the trend; but with a small hash-rate
 share its blocks arrive hours or days apart.  The August 2026 BIP-110 split is
 the clean example: it left Bitcoin at height 961 632 (an exact retarget
-boundary), inherited the new epoch's difficulty, produced two blocks in eight
-hours, then stalled, while its difficulty residual stayed at zero.  Only tip
-age / work rate distinguishes it.
+boundary), inherited the new epoch's difficulty, produced two blocks, then
+stalled, while its difficulty residual stayed at zero.  Only tip age / work rate
+distinguishes it.  (That fork left no usable series, so this is the shape of the
+case, not a backtest — see §8.)
 
 The residual gate covers the opposite case: a fork with a per-block DAA keeps a
 fresh tip by cutting difficulty, which appears as a large negative residual.
@@ -122,11 +123,13 @@ timestamp, but `Δchainwork / Δt` over the window still exposes the gap — and
 take `τ` as a small multiple of the target block interval.  A quarter of the
 hash rate, the case that used to read as "days–weeks of latency", shows up
 either as a ~4× lower target or as ~40-minute blocks, and a window of headers
-resolves it in hours.  A chain that is merely behind because it is still syncing
+resolves it in hours — in principle; this part is analytic and not yet
+backtested (§8).  A chain that is merely behind because it is still syncing
 is handled by *not finalizing yet*, not by calling it invalid.
 
 `band` should also be inflated by the time-elapsed-since-last-refit (staleness),
-which is exactly what the `h` axis of `tightness_vs_staleness.png` shows.
+which is exactly what the `h` axis of `tightness_vs_staleness.png` shows.  Every
+band in §4–§6 uses `m_band()`, which applies the monotone guard (§4).
 
 ## 4. Results
 
@@ -220,6 +223,37 @@ Reading it (W = 4y):
     variability is real and is why a single scalar threshold should be derived
     per-fit, not assumed.
 
+Two caveats on this figure.  The right panel takes the **best** case over the
+three forks (`max`); the worst-case (`min`) margins are smaller — the thinnest
+claimed cell, start 2020 with 2y staleness, is +0.46 dex best-case but +0.38
+worst-case.  And the grid only asks whether *forks* fall outside the band; it
+never checks whether the **true** chain stays inside it, which it does not in
+every window (see below).
+
+### Calibration is weaker than it looks — `calibration_audit.py`
+
+Every "95 %" in this section is **in-sample**: `calibrate()` takes the 95th
+percentile of the same overlapping fit windows it then scores, so coverage is
+true by construction, and the monotone guard extrapolates a noisy in-sample tail.
+Fixing `m` on windows before a cutoff and scoring after it gives, for W = 4
+(nominal 95 %):
+
+| staleness h | 0 | 1 | 2 | 3 |
+|-------------|---|---|---|---|
+| coverage after 2018 | 76 % | 53 % | 35 % | 18 % |
+
+Support is thin at the top end too: 26 windows at h = 0 but 14 at h = 6 and 10 at
+h = 8 for W = 4 (18 / 6 / 2 for W = 8).  And the true chain is flagged in about
+2 of every 24–26 windows at each staleness — one of them is live.  BTC difficulty
+peaked at 1.56 × 10¹⁴ on 2025-10-29 and is 1.33 × 10¹⁴ now; that is 0.22 dex
+below a 1-year-stale trend against a 0.09 dex band, so **a node whose checkpoints
+are 6–12 months old would flag real Bitcoin today** (W = 4 at h = 0.5–1, W = 2 at
+h = 1).  The band is therefore both too tight in-sample and too optimistic out of
+sample; the fix is walk-forward calibration with reported coverage, not a
+percentile of the scoring set.  `calibration_audit.py` prints all of it: support
+counts (A), walk-forward coverage (B), false positives including the live tip (C),
+and worst-case fork margins (D).
+
 ## 5. Limitations
 
 * **Same PoW only.**  The comparison is meaningless across different PoW.
@@ -231,13 +265,16 @@ Reading it (W = 4y):
   tip).  What remains genuinely ambiguous is a fork holding a large share of the
   hash rate — a near-50/50 split, where both chains produce recent tips at
   similar difficulty.  That is the same 50/50 problem as any work-based rule.
+  The "hours" figure here is analytic, not yet backtested (§8).
 * **Staleness.**  Confidence in the *difficulty* band is a decreasing function of
   years since the last trusted checkpoint: beyond ~2 years a small fork can hide
   inside it, and beyond ~5 years the calibration itself is thin.  The tip-age /
-  work-rate gate is unaffected, because it needs no trusted model at all — only a
-  clock and the candidate's own headers — which is why the two gates age
-  differently.  At ten years the band stops being the defender's margin and
-  becomes the forger's budget: see §6.
+  work-rate gate does not decay with staleness — but its trust root is the
+  **node's clock**, not the candidate's headers: header timestamps are
+  attacker-chosen within MTP and `now + 2 h`, so an eclipsed node with a skewed
+  clock is attackable through it.  That is why the two gates age differently.  At
+  ten years the band stops being the defender's margin and becomes the forger's
+  budget: see §6.
 * **Regime shifts.**  BTC difficulty has drawn-downs (2011, 2015, 2018, 2022)
   where the true chain also leaves a tight band; this is why the band is
   calibrated empirically and why "sustained" divergence is required.
@@ -253,42 +290,50 @@ also the forger's budget.  A chain passes if its difficulty is no more than
 `band` dex below the trend, so the forger only has to sit at the **bottom edge**
 of the band and does not need to approach Bitcoin's hash rate at all.
 
-Setup: checkpoints end 2016-07, candidate tip 2026-07 (BTC difficulty
-1.33 × 10¹⁴, network ≈ 950 EH/s).  Prices are at $0.04 per TH/s per day
-(≈ $40/PH/day), i.e. rented SHA-256 hash, and scale linearly with it.
+Setup: checkpoints end 2016-09-12 (height 429 408), candidate tip 2026-09-19
+(height 967 680; BTC difficulty 1.33 × 10¹⁴, network ≈ 950 EH/s).  Prices are at
+$0.04 per TH/s per day (≈ $40/PH/day), i.e. rented SHA-256 hash, and scale
+linearly with it.
 
-| W | band | `D_min` | `D_min` / BTC tip | H for 10-min tips | % of network | real BTC passes? |
-|---|------|---------|-------------------|-------------------|--------------|------------------|
-| 2y | 2.89 dex (×772) | 1.05 × 10¹¹ | 0.08 % | 0.75 EH/s | 0.08 % | yes |
-| 3y | 3.35 dex (×2230) | 4.16 × 10¹² | 3.1 % | 30 EH/s | 3.1 % | yes |
-| 4y | 3.81 dex (×6470) | 5.19 × 10¹⁴ | 391 % | — | — | **no** (residual −4.4 dex) |
-| 5y | 1.42 dex (×26) | 8.62 × 10¹⁵ | 6493 % | — | — | **no** (residual −3.2 dex) |
+Bands go through `m_band()` (§3), which applies the monotone guard over the full
+staleness grid.  That detail changes the answer: `calibrate()` only enforces "a
+band cannot shrink as the model ages" across the `h` values it is handed, so
+asking it for a single `h` skips the guard.  The guarded value is the running
+maximum of the raw percentile over all smaller `h`, so at 10 years it is set by
+whichever staleness estimated widest (raw → guarded: 17 → 21 for W = 2, 7 → 11
+for W = 4).
+
+| W | band (raw → guarded) | `D_min` / BTC tip | H for 10-min tips | 1 block | 1 day | cumulative work |
+|---|----------------------|-------------------|-------------------|---------|-------|-----------------|
+| 2y | 2.89 → **3.62** dex | 0.015 % | 0.14 EH/s (0.015 %) | $39 | $5.6 k | $4.4 M |
+| 3y | 3.35 → **4.56** dex | 0.19 % | 1.8 EH/s (0.19 %) | $510 | $73 k | $37 M |
+| 4y | 3.81 → **5.94** dex | 2.9 % | 27 EH/s (2.9 %) | $7.6 k | $1.1 M | $377 M |
+| 5y | 1.42 → **4.90** dex | 2.1 % | 20 EH/s (2.1 %) | $5.6 k | $810 k | $319 M |
 | 8y | undefined | — | — | — | — | no calibration window reaches h = 10y |
 
-So 10 years is past the edge of the model's support, not merely "thin".  With
-W = 4–5 the fit extrapolates a steep 2012–2016 slope and demands *more*
-difficulty than Bitcoin itself has — the true chain fails its own test, which is
-the failure mode the right-hand panel of `start_grid.png` already flags.  Only
-W = 2–3 leave a usable (and very wide) band.
+With the guard applied, **every** W = 2–5 keeps the true chain inside its own
+band, so there is no "usable window" left to hide behind: a forger needs only
+0.015–3 % of Bitcoin's hash rate.  (An earlier version of this section reported
+W = 4–5 failing their own test and only W = 2–3 being usable; that was the
+unguarded single-`h` artifact and is withdrawn.)
 
-For those, the cost of a forged chain depends on how much of it the node
-actually checks:
+The cost depends on how much of the chain the node actually checks:
 
-| what is checked | cost (W = 2) | cost (W = 3) |
-|-----------------|--------------|--------------|
-| tip difficulty + tip age only | ~$210 (one block) | ~$8 k |
-| sustained work rate, 1-day window | ~$30 k/day | ~$1.2 M/day |
-| cumulative work from the anchor | ~$24 M | ~$590 M |
+| what is checked | W = 2 | W = 3 |
+|-----------------|-------|-------|
+| tip difficulty + tip age only | ~$39 (one block) | ~$510 |
+| sustained work rate, 1-day window | ~$5.6 k/day | ~$73 k/day |
+| cumulative work from the anchor | ~$4.4 M | ~$37 M |
 | — reference: Bitcoin's real 10-year work | ~$47 B | ~$47 B |
 
-A forger needs neither ten years nor Bitcoin's hash rate.  If the rule looks only
-at the tip's difficulty and freshness, a single block at the band edge — a couple
-of hundred dollars of rented hash — clears both, in the W = 2 case.  The second
-row is the cost of looking continuously credible across a trailing window (and
-of actually keeping 10-minute tips); the third is the cost if the node also
-requires cumulative work since the anchor, which raises the bar by the band
-factor (×772) but does not remove it — with ten-year-old checkpoints even that
-is only tens of millions.
+(W = 4 sits between the columns at $7.6 k / $1.1 M/day / $377 M.)  A forger needs
+neither ten years nor Bitcoin's hash rate: if the rule looks only at the tip's
+difficulty and freshness, a single block at the band edge — tens of dollars of
+rented hash at W = 2 — clears both.  Requiring cumulative work since the anchor
+raises the bar by the band factor (×4170 at W = 2), but does not remove it: at
+ten years even that is single-digit millions, because the band is what sets the
+price.  All of these are far below the ~$47 B that Bitcoin's own ten-year
+chainwork would cost.
 
 Two changes follow:
 
@@ -300,21 +345,23 @@ Two changes follow:
   the anchor with the trend's integral.  Difficulty is a point sample the forger
   can meet with one block; work is the quantity they cannot fake cheaply.
 
-The tip-age / work-rate gate is the one part that does not decay with staleness
-(§5): it stops the BIP-110-style stall at any checkpoint age.  The attack above
-is what remains — a forger who *does* keep tips fresh — and its price is the band.
+The tip-age / work-rate gate is the one part whose sensitivity does not decay
+with staleness (§5), though its trust root is the node's clock, not header
+timestamps.  The attack above is what remains — a forger who *does* keep tips
+fresh — and its price is the band.
 
 ## 7. Files
 
 ```
 partition-safe-ibd/
-  fetch.py          # download/cache difficulty series -> data/<chain>.json
-  analyze.py        # fit, calibrate, and draw all four diagrams
-  attack_cost.py    # cost of a forged chain at a given checkpoint staleness
-  checkpoints.txt   # trusted BTC header spine (one header per 2016 blocks)
-  data/             # cached series (BTC, BCH, BSV, XEC)
-  diagrams/         # generated PNGs
-  README.md         # this file
+  fetch.py             # download/cache difficulty series -> data/<chain>.json
+  analyze.py           # fit, calibrate, and draw all four diagrams
+  attack_cost.py       # cost of a forged chain at a given checkpoint staleness
+  calibration_audit.py # support, walk-forward coverage, false positives, margins
+  checkpoints.txt      # trusted BTC header spine (one header per 2016 blocks)
+  data/                # cached series (BTC, BCH, BSV, XEC)
+  diagrams/            # generated PNGs
+  README.md            # this file
 ```
 
 ### Running
@@ -326,6 +373,7 @@ pip install matplotlib          # and numpy (pulled in by matplotlib)
 python3 fetch.py                # BTC is offline; BCH/XEC hit Blockchair, BSV a public node
 python3 analyze.py              # writes diagrams/*.png and prints the band table
 python3 attack_cost.py          # forged-chain cost at 10y staleness; args: [years] [$/TH/day]
+python3 calibration_audit.py    # calibration support, coverage and false positives
 ```
 
 `fetch.py` caches: delete `data/<chain>.json` to refetch.
@@ -348,3 +396,15 @@ python3 attack_cost.py          # forged-chain cost at 10y staleness; args: [yea
   the tip, and compare it against the trend's integral over the stale interval.
   Without it a forger can clear the difficulty gate with a single block (§6);
   with it the price becomes the band-edge work for the whole interval.
+* **Recalibrate out of sample.**  `calibration_audit.py` shows the in-sample "95 %"
+  is not coverage (W = 4 falls from 76 % to 18 % out of sample, h = 0 → 3), that
+  support is thin at the top end, and that the true chain is flagged today once
+  checkpoints are 6–12 months old.  Fit `m(W, h)` walk-forward, report coverage
+  with a confidence interval, refuse to emit below a support threshold, and
+  replace the monotone guard — a running max of noisy percentiles — with a
+  smooth or upper-confidence band.
+* Run a **synthetic Poisson backtest** of the freshness gate: block arrivals at
+  hash share `f`, inherited difficulty, and a trailing-window `Δchainwork / Δt`
+  test.  That is the missing evidence for the BIP-110-style "hours" claim in §3.
+* Build a **block-level generator** with real retarget code (≤4× per 2016 blocks,
+  MTP and `now + 2 h` limits) to confirm the closed-form §6 costs.
