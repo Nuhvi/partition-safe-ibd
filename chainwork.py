@@ -1,155 +1,36 @@
 #!/usr/bin/env python3
-"""Chainwork-since-the-checkpoint as the node statistic (Phase 2 redesign).
+"""Report and figures for the chainwork rule (README §7).
 
-The tip-difficulty rule in analyze.py grades a *point* and can be cleared with a
-single block (attack_cost.py, README §6).  This module grades the *work actually
-done over the elapsed interval* instead:
-
-    trusted anchor      (height h0, time t0, difficulty D0, cumulative work C0)
-    candidate tip       (height h1, time t1, cumulative work C1)
-    node clock          t_now                       (NOT the candidate's headers)
-    elapsed             T = t_now - t0
-    observed work       dC = C1 - C0
-    trend work          Wtr = integral of (D_tr * 2^32 / 600) over [t0, t_now]
-    statistic           q = log10(dC) - log10(Wtr)
-
-The trend difficulty D_tr is the same power law fit as analyze.py.  Finality
-requires
-
-    q >= -band(W, h)          one-sided: a chain may have more work, not less
-    dC >= floor(t0)           hard floor: at least one block at the anchor's own
-                              difficulty, so an absurdly wide band can never
-                              accept a chain that has not grown at all
-
-`band` is calibrated on q for the true chain, with the model's monotone guard
-(non-decreasing in h).  Elapsed time comes from the node's clock, so header
-timestamps only enter through the work they certify.
+The statistic, calibration and decision live in finality.py; this module only
+prints the tables and draws diagrams/chainwork_band.png and
+diagrams/chainwork_grid.png.
 
 Usage:  python3 chainwork.py [W ...]     (default 2 4 8)
 """
 import math
-import random
 import sys
 
-from analyze import load, fit, predict, YEAR
+from analyze import load, fit, predict, denom, m_band
+from finality import (BTC, X_NOW, H_NOW, WORK, HASHPRICE, MIN_SUPPORT, usd,
+                      work_between, trend_work, q_at, q_samples, band_raw,
+                      band, band_ci, floor_work, envelope_report)
 
-WORK = 2 ** 32
-TARGET = 600.0            # seconds per block
-TH_DAY = 1e12 * 86400     # hashes per (TH/s * day)
-HASHPRICE = 0.04          # USD per TH/s per day; scales linearly
-MIN_SUPPORT = 8           # refuse to trust a band built from fewer windows
 QS = (0.5, 1.0, 2.0, 4.0, 6.0, 10.0)
 WS = [float(a) for a in sys.argv[1:]] or [2.0, 4.0, 8.0]
-BTC = load("BTC")
-X_NOW = BTC[-1][0]
-H_NOW = 10 ** BTC[-1][1] * WORK / TARGET
-
-
-def usd(hashes):
-    return hashes / TH_DAY * HASHPRICE
-
-
-def work_between(lo, hi, pts=None):
-    """Chainwork (hashes) of the sampled chain between two times (years)."""
-    pts = pts or BTC
-    total = 0.0
-    for i in range(1, len(pts)):
-        x0, y0, h0, _ = pts[i - 1]
-        x1, y1, h1, _ = pts[i]
-        if x1 < lo or x0 > hi:
-            continue
-        a, z = max(x0, lo), min(x1, hi)
-        if z <= a:
-            continue
-        total += (h1 - h0) * ((z - a) / (x1 - x0)) * WORK * 10 ** ((y0 + y1) / 2)
-    return total
-
-
-def trend_work(model, lo, hi):
-    """Chainwork implied by the fitted trend line over [lo, hi] (years)."""
-    a, b = model["a"], model["b"]
-    return WORK / TARGET * YEAR * 10 ** a / (b + 1) * (hi ** (b + 1) - lo ** (b + 1))
-
-
-def q_at(W, h, e, pts=None):
-    """q for the chain that forked at trend-fit end `e` and is `h` years newer."""
-    pts = pts or BTC
-    model = fit(e, W, pts)
-    if not model or e + h > pts[-1][0]:
-        return None
-    act = work_between(e, e + h, pts)
-    tr = trend_work(model, e, e + h)
-    return None if act <= 0 or tr <= 0 else math.log10(act) - math.log10(tr)
-
-
-def q_samples(W, h):
-    """(test calendar year, q) for every fit window at this staleness."""
-    out, e = [], 1.0 + W
-    while e <= X_NOW - h:
-        q = q_at(W, h, e)
-        if q is not None:
-            out.append((2009.0 + e + h, q))
-        e += 0.5
-    return sorted(out)
-
-
-def band_raw(W, h, q=0.05):
-    """One-sided band = magnitude of the lower `q` quantile of the true chain."""
-    vals = sorted(v for _, v in q_samples(W, h))
-    return None if not vals else max(0.0, -vals[int(q * (len(vals) - 1))])
-
-
-def band(W, h, grid_max=10.0, step=0.5):
-    """Guarded band: non-decreasing in h (a band cannot shrink as it ages)."""
-    hs = sorted({round(i * step, 6) for i in range(int(round(grid_max / step)) + 1)
-                 if i * step <= h} | {h})
-    run = 0.0
-    for hh in hs:
-        b = band_raw(W, hh)
-        if b is not None:
-            run = max(run, b)
-    return run
-
-
-def band_ci(W, h, trials=2000, seed=0):
-    """Bootstrap 5–95 % interval for the one-sided band."""
-    vals = [v for _, v in q_samples(W, h)]
-    n = len(vals)
-    if n < 2:
-        return None
-    rng = random.Random(seed)
-    bs = []
-    for _ in range(trials):
-        s = sorted(vals[rng.randrange(n)] for _ in range(n))
-        bs.append(max(0.0, -s[int(0.05 * (n - 1))]))
-    bs.sort()
-    return bs[int(0.05 * (trials - 1))], bs[int(0.95 * (trials - 1))]
-
-
-def anchor_difficulty(e):
-    """Trusted chain's difficulty at the anchor (nearest sample at or before e)."""
-    row = [p for p in BTC if p[0] <= e]
-    return 10 ** row[-1][1]
-
-
-def floor_work(e):
-    """Hard floor: one block at the anchor's own difficulty."""
-    return WORK * anchor_difficulty(e)
 
 
 def main():
     print("chainwork statistic q = log10(work since anchor) - log10(trend integral)")
-    print("one-sided band on q, monotone-guarded; floor = one block at anchor difficulty")
+    print("one-sided band on q, isotonic-calibrated; floor = one block at anchor difficulty")
     print()
 
-    print("=== bands (dex) ===")
+    print("=== bands (dex, raw -> isotonic) ===")
     print("%-6s %s" % ("W", "".join("%-13s" % f"h={h:g}" for h in QS)))
     for W in WS:
         cells = []
         for h in QS:
             raw = band_raw(W, h)
             g = band(W, h)
-            n = len(q_samples(W, h))
             cells.append(f"{raw:.2f}->{g:.2f}" if raw is not None else "n/a")
         print("%-6s %s" % (f"{W:g}y", "".join("%-13s" % c for c in cells)))
 
@@ -181,7 +62,7 @@ def main():
                 row.append(f"{sum(v >= -b for v in ev) / len(ev):.0%}({len(ev)}) b={b:.2f}")
             print("%-6s %-4g %-16s %-16s %-16s" % (f"{W:g}y", h, *row))
 
-    print("\n=== false positives on the true chain (guarded band) ===")
+    print("\n=== false positives on the true chain (calibrated band) ===")
     for W in WS:
         for h in (0.5, 1, 2, 4, 10):
             rs = q_samples(W, h)
@@ -201,7 +82,6 @@ def main():
         for h in (0.5, 1, 2, 4):
             e = X_NOW - h
             model = fit(e, W, BTC)
-            from analyze import denom, m_band
             bd = m_band(W, h, BTC) * denom(model, X_NOW)
             d_edge = 10 ** (predict(model, X_NOW) - bd)
             bq = band(W, h)
@@ -212,9 +92,11 @@ def main():
                    f"{bq:.2f} dex", f"${usd(cw):,.0f}"))
     print("\nfor scale: 1 day of Bitcoin's present hash rate = $%s"
           % f"{usd(H_NOW * 86400):,.0f}")
+    print("\n" + envelope_report())
 
     try:
         plot()
+        fig_grid()
     except ImportError:
         pass
 
@@ -229,7 +111,7 @@ def plot(path="diagrams/chainwork_band.png"):
     for W in WS:
         ax1.plot(hs, [band(W, h) for h in hs], marker="o", ms=3, label=f"W={W:g}y")
     ax1.set_xlabel("staleness h (years)"); ax1.set_ylabel("one-sided band (dex)")
-    ax1.set_title("chainwork band vs staleness (guarded)")
+    ax1.set_title("chainwork band vs staleness (isotonic)")
     ax1.grid(alpha=0.25); ax1.legend()
 
     W = 4.0
@@ -237,7 +119,6 @@ def plot(path="diagrams/chainwork_band.png"):
     for h in hs:
         e = X_NOW - h
         model = fit(e, W, BTC)
-        from analyze import denom, m_band
         bd = m_band(W, h, BTC) * denom(model, X_NOW)
         tips.append(usd(10 ** (predict(model, X_NOW) - bd) * WORK))
         cw.append(usd(max(trend_work(model, e, X_NOW) / 10 ** band(W, h), floor_work(e))))
@@ -249,6 +130,67 @@ def plot(path="diagrams/chainwork_band.png"):
 
     fig.tight_layout(); fig.savefig(path, dpi=130); plt.close(fig)
     print(f"\nwrote {path}")
+
+
+def fig_grid(W=4.0, Ss=(0.5, 1, 2, 3, 4, 6, 8),
+             starts=(2018, 2020, 2022, 2024, 2026), path="diagrams/chainwork_grid.png"):
+    """The start grid, on the chainwork statistic, worst-case fork + true chain.
+
+    A fork is judged only when its sampled series spans the whole anchor->start
+    interval; otherwise the cell is left blank (that anchor cannot see it).
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    series = {c: load(c) for c in ("BCH", "BSV", "XEC")}
+    bandg = np.full((len(Ss), len(starts)), np.nan)
+    forkg = np.full_like(bandg, np.nan)
+    trueg = np.full_like(bandg, np.nan)
+    for i, S in enumerate(Ss):
+        b = band(W, S)
+        for j, cal in enumerate(starts):
+            x0 = cal - 2009.0
+            anchor = x0 - S
+            model = fit(anchor, W, BTC)
+            if not model or anchor - W < 1.0 or S <= 0:
+                continue
+            bandg[i, j] = b
+            tr = trend_work(model, anchor, x0)
+            wt = work_between(anchor, x0, BTC)
+            trueg[i, j] = (math.log10(wt) - math.log10(tr) + b) if wt > 0 else np.nan
+            margins = []
+            for c, pts in series.items():
+                if pts[0][0] > anchor:          # series does not reach the anchor
+                    continue
+                w = work_between(anchor, x0, pts)
+                if w > 0:
+                    margins.append(math.log10(w) - math.log10(tr) + b)
+            if margins:
+                forkg[i, j] = -max(margins)     # detection margin; worst = hardest to catch
+
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5.2))
+    for ax, G, title, cmap in (
+            (axes[0], bandg, f"band half-width (dex), W={W:g}y", "viridis"),
+            (axes[1], forkg, "worst fork detection margin = band − q  (>0 = caught)", "RdYlGn"),
+            (axes[2], trueg, "true chain margin, >0 = passes its own band", "RdYlGn")):
+        vmin, vmax = (None, None) if cmap == "viridis" else (-3, 3)
+        im = ax.imshow(G, cmap=cmap, aspect="auto", origin="lower", vmin=vmin, vmax=vmax)
+        for i in range(len(Ss)):
+            for j in range(len(starts)):
+                if not math.isnan(G[i, j]):
+                    ax.text(j, i, f"{G[i,j]:.1f}", ha="center", va="center", fontsize=7)
+                elif not math.isnan(bandg[i, j]):
+                    ax.text(j, i, "no fork", ha="center", va="center", fontsize=6, color="#555")
+        ax.set_xticks(range(len(starts))); ax.set_xticklabels(starts)
+        ax.set_yticks(range(len(Ss))); ax.set_yticklabels(Ss)
+        ax.set_xlabel("node start year"); ax.set_ylabel("checkpoint staleness (years)")
+        ax.set_title(title, fontsize=10)
+        fig.colorbar(im, ax=ax, fraction=0.046)
+    fig.suptitle("Start grid on the chainwork statistic (README §7)")
+    fig.tight_layout(); fig.savefig(path, dpi=130); plt.close(fig)
+    print(f"wrote {path}")
 
 
 if __name__ == "__main__":

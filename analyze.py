@@ -222,6 +222,7 @@ def fig_start_grid(W=4.0, Ss=(0, 1, 2, 3, 4, 6, 8), starts=(2014, 2016, 2018, 20
 
     band = [[float("nan")] * len(starts) for _ in Ss]
     margin = [[float("nan")] * len(starts) for _ in Ss]
+    truefail = [[False] * len(starts) for _ in Ss]
     others = ["BCH", "BSV", "XEC"]
     series = {c: load(c) for c in others}
     for i, S in enumerate(Ss):
@@ -233,16 +234,17 @@ def fig_start_grid(W=4.0, Ss=(0, 1, 2, 3, 4, 6, 8), starts=(2014, 2016, 2018, 20
                 continue
             b = m_of(S) * denom(mod, x0)
             band[i][j] = b
-            sep = 0.0
+            sep = float("inf")
             for c in others:
                 pts = series[c]
                 xs = [p for p in pts if p[0] <= x0 + 0.4]
                 if not xs:
                     continue
                 y = xs[-1][1]
-                sep = max(sep, predict(mod, x0) - y)  # best-case fork; worst-case is in calibration_audit.py
-            if sep > 0:
+                sep = min(sep, predict(mod, x0) - y)  # worst-case fork
+            if sep != float("inf"):
                 margin[i][j] = sep - b
+            truefail[i][j] = (btc[-1][1] - predict(mod, x0) < -b)  # real chain fails?
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
     import numpy as np
@@ -260,18 +262,21 @@ def fig_start_grid(W=4.0, Ss=(0, 1, 2, 3, 4, 6, 8), starts=(2014, 2016, 2018, 20
     fig.colorbar(im1, ax=ax1, fraction=0.046)
 
     img = ax2.imshow(M, cmap="RdYlGn", aspect="auto", origin="lower", vmin=-3, vmax=3)
-    ax2.set_title("detection margin = fork divergence − band  (>0 = caught)")
+    ax2.set_title("detection margin = fork divergence − band  (>0 = caught), worst fork")
     for i in range(len(Ss)):
         for j in range(len(starts)):
             if not math.isnan(M[i, j]):
                 ax2.text(j, i, f"{M[i,j]:+.1f}", ha="center", va="center", fontsize=7)
             elif not math.isnan(B[i, j]):
                 ax2.text(j, i, "no fork", ha="center", va="center", fontsize=6, color="#555")
+            if truefail[i][j]:
+                ax2.plot(j, i, marker="x", color="k", ms=7, mew=1.5)  # real chain fails its band
     ax2.set_xticks(range(len(starts))); ax2.set_xticklabels(starts)
     ax2.set_yticks(range(len(Ss))); ax2.set_yticklabels(Ss)
     ax2.set_xlabel("node start year"); ax2.set_ylabel("checkpoint staleness (years)")
     fig.colorbar(img, ax=ax2, fraction=0.046)
-    fig.suptitle("A node booting at (start year, checkpoint staleness): band needed vs detection")
+    fig.suptitle("A node booting at (start year, checkpoint staleness): band needed vs detection\n"
+                 "(x = the real BTC chain would fail this band)")
     fig.tight_layout(); fig.savefig(f"{DIAG}/start_grid.png", dpi=130)
     plt.close(fig)
     return B, M, Ss, starts

@@ -95,39 +95,40 @@ model ages).
 
 ### Decision rule
 
-Two independent gates, both required before finalizing:
+The node grades the **work the candidate has done since its trusted anchor**
+(§7).  The earlier tip-difficulty residual is kept only for the analysis in
+§4–§6, where it motivated the redesign:
 
 ```
-stale tip / low work rate       → do NOT finalize; the chain is not keeping up
-r(x) ≥ −band(x)                 → consistent with the dominant chain; may finalize
-r(x) <  −band(x), sustained     → minority / partitioned; do NOT finalize,
-                                  keep looking for peers that extend the anchor
+dC < 2³² · D0                       → do NOT finalize; the chain has not grown
+dC < Wtr / 10^band                  → do NOT finalize; below the rate edge
+tip age > τ                         → do NOT finalize; not keeping up
+otherwise                           → may finalize
 ```
 
-The first gate is what covers a fork that does **not** change its difficulty
-algorithm.  Such a chain inherits the parent's target, so its difficulty — and
-therefore its residual — still matches the trend; but with a small hash-rate
-share its blocks arrive hours or days apart.  The August 2026 BIP-110 split is
-the clean example: it left Bitcoin at height 961 632 (an exact retarget
-boundary), inherited the new epoch's difficulty, produced two blocks, then
-stalled, while its difficulty residual stayed at zero.  Only tip age / work rate
-distinguishes it.  (That fork left no usable series, so this is the shape of the
-case, not a backtest — see §8.)
+`sustained` is what the elapsed interval gives for free.  `dC` is cumulative work
+since the anchor and `T = t_now − t0` is the node's clock, so a divergence is
+already integrated over the whole interval — there is no separate
+"for N consecutive evaluations" test to define, and no single block clears it.
+That is the point of the §7 change: the work gate subsumes the freshness gate
+(a stalled chain has both a stale tip and too little work).
 
-The residual gate covers the opposite case: a fork with a per-block DAA keeps a
-fresh tip by cutting difficulty, which appears as a large negative residual.
+A fork that does **not** change its difficulty algorithm is the easy case: it
+inherits the parent's target, so its difficulty matches the trend, but with a
+small hash-rate share its `dC` over the interval is far below `Wtr`.  The August
+2026 BIP-110 split is the clean example — it left Bitcoin at height 961 632 (an
+exact retarget boundary), inherited the new epoch's difficulty, produced two
+blocks, then stalled, and its own next retarget was years away, so nothing
+resets the difficulty to hide behind.  A fork that *does* run a per-block DAA is
+caught the same way: cutting difficulty keeps the 10-minute cadence but does not
+change the work, so `dC` stays low.
 
-The two gates are complementary.  Apply freshness to a trailing window rather
-than a single block — a stalled chain can produce one lucky block with a current
-timestamp, but `Δchainwork / Δt` over the window still exposes the gap — and
-take `τ` as a small multiple of the target block interval.  A quarter of the
-hash rate, the case that used to read as "days–weeks of latency", shows up
-either as a ~4× lower target or as ~40-minute blocks, and a window of headers
-resolves it in hours.  `simulate.py` now backs that up at the block level
-(§9): below the rate edge `10^−band` the work gate fires at the first check —
-`τ` ≈ 1 h in the backtest — in every trial, while a genuine 50/50 split survives
-for days.  A chain that is merely behind because it is still syncing is handled
-by *not finalizing yet*, not by calling it invalid.
+Take `τ` as a small multiple of the target block interval.  `simulate.py` backs
+the latency claim up at the block level (§9): below the rate edge `10^−band` the
+work gate fires at the first check — `τ` ≈ 1 h in the backtest — in every trial,
+while a genuine 50/50 split survives for days.  A chain that is merely behind
+because it is still syncing is handled by *not finalizing yet*, not by calling it
+invalid.
 
 ![detection latency](diagrams/detection_latency.png)
 
@@ -216,17 +217,23 @@ windows in BTC's history reach that far), so treat those values as indicative.
 This is the answer to *"what if a new node starts at some point in history with
 `S` years of stale checkpoints before its first sync?"*  For each cell we fit the
 trend to BTC up to `start − S` and ask (a) how wide the 95 % band is, and (b)
-whether the fork chains that exist by then fall outside it.
+whether the fork chains that exist by then fall outside it.  This is the
+**tip-difficulty** formulation — §7 supersedes it with the same grid on the
+chainwork statistic, and that one is the canonical figure.
 
 Reading it (W = 4y):
 
 * **Left** — required band half-width in dex.  A node starting in 2020+ with
   ≤2 years of staleness needs only ~0.2–0.8 dex; one starting in 2018 with 6
   stale years needs ~6 dex.
-* **Right** — detection margin = fork divergence − band.  Green (>0) means the
-  minority chain would have been flagged; red means it would have been mistaken
-  for consistent.
-  * Starting 2020 or later with ≤2y staleness: **every fork caught**.
+* **Right** — detection margin = fork divergence − band, for the **worst** fork
+  (`min` over the three).  Green (>0) means even the hardest fork would have been
+  flagged; red means at least one would have been mistaken for consistent.  An
+  **x** marks a cell where the *real* chain would fail its own band — the
+  false-positive side, which the earlier version of this figure did not show.
+  * Starting 2020 or later with ≤2y staleness: **every fork caught**, but the
+    thinnest such cell is only +0.38 dex, and two 2026 cells (including the live
+    one at `S` = 0) are marked x — the real chain fails its own band there.
   * Starting 2018 with 3–6y staleness (fit lands on the 2012–13 ramp): **missed**
     — those windows extrapolate badly.
   * The row for staleness 8 at 2026 is looser than its neighbours because the
@@ -234,12 +241,11 @@ Reading it (W = 4y):
     variability is real and is why a single scalar threshold should be derived
     per-fit, not assumed.
 
-Two caveats on this figure.  The right panel takes the **best** case over the
-three forks (`max`); the worst-case (`min`) margins are smaller — the thinnest
-claimed cell, start 2020 with 2y staleness, is +0.46 dex best-case but +0.38
-worst-case.  And the grid only asks whether *forks* fall outside the band; it
-never checks whether the **true** chain stays inside it, which it does not in
-every window (see below).
+The figure now uses the **worst** fork (`min` over the three), so the margins are
+lower than the first version's best-case numbers — the thinnest claimed cell,
+start 2020 with 2y staleness, is +0.38 dex — and it marks cells where the true
+chain fails its own band.  The remaining caveat is that the band itself is
+in-sample (below).
 
 ### Calibration is weaker than it looks — `calibration_audit.py`
 
@@ -381,15 +387,21 @@ Finality requires `q ≥ −band(W, h)` **and** a hard floor
 `dC ≥ 2³² · D0`, where `D0` is the anchor's own (trusted) difficulty — without it
 a wide band could accept a chain that has not grown at all.  Header timestamps
 only enter through the work they certify; elapsed time is the node's, so it
-cannot be shortened by choice of timestamps.  `chainwork.py` calibrates `band` on
-`q` for the true chain, monotone-guarded, and reports walk-forward coverage and
-attacker cost.
+cannot be shortened by choice of timestamps.  `finality.py` owns this rule —
+statistic, calibration and decision — and `chainwork.py` reports on it.  The band
+is calibrated on `q` for the true chain and made non-decreasing in `h` by
+**isotonic regression** (PAVA), not a running max.  The fit is global (a node
+ships the table), so the band cannot shrink with age.  For W = 4–8 the two agree
+closely; for W = 2 at h = 2 the running max carries a spike forward (2.14 vs 1.89
+isotonic), which is exactly the over-conservatism isotonic removes.  That is also
+why the retired difficulty band was fragile: there the choice of smoother moved
+the ten-year band by 30 %.
 
 ### Bands, coverage, and the live false positive
 
 | W | h=0.5 | h=1 | h=2 | h=4 | h=10 |
 |---|-------|-----|-----|-----|------|
-| 2y | 1.07 | 1.66 | 2.14 | 2.51 | 8.56 |
+| 2y | 1.07 | 1.66 | 1.89 | 2.51 | 8.56 |
 | 4y | 0.65 | 0.69 | 0.94 | 1.73 | 3.98 |
 | 8y | 0.65 | 0.78 | 1.02 | 1.40 | n/a |
 
@@ -427,11 +439,72 @@ produce `Wtr / 10^band` hashes across the whole elapsed interval.
 | 2y | $0.15 M | $3.1 B | ~20 900× |
 | 4y | $53 k | $0.52 B | ~9 800× |
 
-($0.04/TH/day; one day of Bitcoin's present hash rate ≈ $38 M, so $3.9 B ≈ 100
-network-days.)  That ~10⁴× is the redesign's point: it turns "one block clears
-it" into "produce a large fraction of a year of network work".
+(The tip column assumes the attacker may choose the tip difficulty; that
+assumption fails under real retarget rules at small `h` — see the next
+subsection.)  $0.04/TH/day; one day of Bitcoin's present hash rate ≈ $38 M, so
+$3.9 B ≈ 100 network-days.  The chainwork column is the redesign's point: it
+turns "one block clears it" into "produce a large fraction of a year of network
+work".
 
 ![chainwork](diagrams/chainwork_band.png)
+
+### But the attacker does not get to pick the tip difficulty — `attack_sim.py`
+
+The "tip difficulty: one block" column is an upper bound on attacker *optimism*:
+it assumes the fork may set its tip difficulty to the band edge.  A node
+validating the candidate as a Bitcoin chain does not allow that — difficulty is
+pinned by the retarget path from the anchor (2016 blocks, 4× clamp), so the fork
+has to live with the difficulty its own hash rate earns.  `attack_sim.py` mines
+that fork forward (honest Poisson timestamps, real retarget) and asks whether the
+node would accept it:
+
+| h = 0.5y, W = 4 | f = 0.05 | 0.1 | 0.2 | 0.3 | 0.5 | 1.0 |
+|-----------------|----------|-----|-----|-----|-----|-----|
+| tip-difficulty pass rate | 0 % | 0 % | 0 % | 0 % | 0 % | 0 % |
+| chainwork pass rate | 0 % | 0 % | 0 % | 82 % | 100 % | 100 % |
+| work cost | $0.38 B | $0.76 B | $1.5 B | $2.3 B | $3.8 B | $7.6 B |
+
+Two things fall out.  The **chainwork closed form is accurate**: the simulated
+minimum at `f` ≈ 0.3 costs $2.27 B against the closed-form $2.26 B.  And the
+**tip-difficulty rule cannot be passed at all** here — its difficulty converges
+to `f·D₀`, which is below a trend that expects growth, so no fork short of the
+dominant chain's own hash rate passes, and even the dominant chain fails at these
+`h` (§4's live false positive).  So the real choice is not "cheap point sample vs
+expensive interval": it is a rule that is unusable in both directions versus one
+that is calibrated and prices an attack at $2–4 B.
+
+### The start grid on this statistic — `diagrams/chainwork_grid.png`
+
+The same grid as §4, evaluated with work-since-anchor instead of tip difficulty.
+A fork is judged only when its sampled series reaches back to the anchor, so
+early cells are blank ("no fork"); the middle panel is the **worst** fork and the
+right panel is the true chain.
+
+![chainwork grid](diagrams/chainwork_grid.png)
+
+Read against §4: the forks are caught (middle panel > 0) out to about two years
+of staleness, and not beyond — which is the same failure the wide band produces
+everywhere, not a datum about the forks.  The right panel is uniformly positive
+out to `S` = 8, i.e. the redesign removes the §4 false positives at every point
+shown.
+
+### Operating envelope — how stale can the checkpoints be?
+
+"Cap staleness" needs a number.  `chainwork.py` reports the largest `h` at which
+the rule is supportable: at least `MIN_SUPPORT` windows, walk-forward coverage
+≥ 95 % on tests after 2020, band ≤ the cap, and the live true chain inside it.
+
+| W | band ≤ 1.0 dex | band ≤ 2.0 dex |
+|---|----------------|----------------|
+| 2y | none | h ≤ 1y (band 1.85, cov 100 %, n = 28) |
+| 4y | **h ≤ 1y** (band 0.93, cov 100 %, n = 24) | **h ≤ 3.5y** (band 1.54, cov 100 %, n = 19) |
+| 8y | none | none |
+
+The tip-difficulty statistic has **no valid envelope at any W**: its
+walk-forward coverage never reaches 95 % (it was 76 % → 18 % across `h`).  So the
+concrete recommendation is W = 4 with staleness capped at roughly **one year**
+for a ≤ 1 dex band (three and a half years at ≤ 2 dex), and never the
+difficulty formulation.
 
 ### What this fixes, and what it does not
 
@@ -441,8 +514,8 @@ it" into "produce a large fraction of a year of network work".
   dex at ten years for W = 4, 8.56 for W = 2 — and at h = 10 the live `q` passes
   by only 0.14 dex on 6 samples.  The floor keeps a *non-growing* chain out, but a
   forger who does grow can still sit at the widening edge, so **capping staleness
-  (§6) remains necessary**.
-* "Sustained" is defined here as the **whole interval** `[t0, t_now]`.  A shorter
+  (§6) remains necessary** — see the envelope above for the number.
+* "Sustained" is defined as the **whole interval** `[t0, t_now]`.  A shorter
   trailing window is a weaker variant that would need its own calibration; using
   the whole interval is what makes elapsed time non-negotiable.
 
@@ -454,7 +527,10 @@ partition-safe-ibd/
   analyze.py           # fit, calibrate, and draw all four diagrams
   attack_cost.py       # cost of a forged chain at a given checkpoint staleness
   calibration_audit.py # support, walk-forward coverage, false positives, margins
-  chainwork.py         # §7 redesign: work-since-anchor statistic, band and cost
+  chainwork.py         # §7 report + figures for the work-since-anchor rule
+  finality.py          # canonical rule: statistic, isotonic band, decide()
+  attack_sim.py        # block-level attacker under the real retarget path
+  simulate.py          # block-level Poisson backtest of the freshness/work gate
   simulate.py          # block-level Poisson backtest of the freshness/work gate
   checkpoints.txt      # trusted BTC header spine (one header per 2016 blocks)
   data/                # cached series (BTC, BCH, BSV, XEC)
@@ -473,6 +549,8 @@ python3 analyze.py              # writes diagrams/*.png and prints the band tabl
 python3 attack_cost.py          # forged-chain cost at 10y staleness; args: [years] [$/TH/day]
 python3 calibration_audit.py    # calibration support, coverage and false positives
 python3 chainwork.py            # §7 work-since-anchor statistic + band, coverage, cost
+python3 finality.py             # canonical rule: bands, live decision, envelope
+python3 attack_sim.py           # block-level attacker under real retarget; args: [trials]
 python3 simulate.py             # block-level Poisson backtest of the gate; args: [trials] [days]
 ```
 
@@ -490,13 +568,25 @@ python3 simulate.py             # block-level Poisson backtest of the gate; args
   arrivals, inherited difficulty, real 4×-clamped retarget.  Below the rate edge
   `10^−band` the work gate fires at the first check (≈ `τ`, 1 h) in every trace;
   a 50 % fork escapes 86 % of 7-day traces at a 0.94 dex band, which is the
-  residual 50/50 case quantified.  A **block-level attack generator** that
-  confirms the closed-form §6/§7 costs under the retarget clamp is still to do.
-* **(partly done) Out-of-sample calibration with support and intervals.**
-  `chainwork.py` now reports `n`, a bootstrap band interval, and a
-  `MIN_SUPPORT` floor (h = 10 is flagged THIN).  Remaining: a full walk-forward
-  table with intervals across every `W`, and replacing the monotone guard — a
-  running max of noisy percentiles — with a smooth or upper-confidence band.
+  residual 50/50 case quantified.
+* **(done, `attack_sim.py`) Block-level attacker.**  Under the real retarget path
+  the chainwork closed form holds ($2.27 B simulated vs $2.26 B closed-form at
+  f ≈ 0.3, h = 0.5), and the tip-difficulty rule turns out to be unpassable by
+  any sub-dominant fork (its difficulty converges to `f·D₀`, below the trend).
+  That corrects the "one block" pricing for the difficulty rule at small `h`; at
+  h = 10 the inherited difficulty is already above the band edge, so one block
+  remains enough there.
+* **(done, `finality.py`) One rule module, isotonic calibration.**  Statistic,
+  calibration and decision now live in one place; the non-decreasing band uses
+  isotonic regression (PAVA) rather than a running max, which agrees with it for
+  W = 4–8 and removes the carried-forward spike for W = 2.  Remaining: a full
+  walk-forward table with intervals across every `W`, and an upper-confidence
+  rather than point band.
+* **(done, §7) Start grid on the chainwork statistic.**  `diagrams/chainwork_grid.png`,
+  with the worst-case fork and a true-chain panel; §4's difficulty grid now uses
+  the same worst-case convention and marks true-chain failures.  The operating
+  envelope is stated (W = 4, staleness ≤ ~1y).  Remaining: a starting-anchor
+  variant that evaluates at the *tip* rather than the start year.
 * Move the reference model (`a, b, s, x̄, Sxx, n, fit_end`) and the `band(W, h)`
   table into a node's header validation path, alongside its trusted-checkpoint
   handling, so a node can self-assess a partition.
