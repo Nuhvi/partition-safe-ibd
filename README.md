@@ -103,6 +103,10 @@ before it, with `k` set so the true chain keeps 95 % — removes the extrapolati
 blow-up entirely and is safe against the historical collective for staleness
 ≤ 3 years (margin below zero on every window); it turns positive from ≈ 4 years.
 
+The staleness bound as a function of attacker hash share — including the
+51 %- and 67 %-honesty thresholds and how much hash non-BTC forks actually held —
+is derived in **[resistance.md](resistance.md)**.
+
 ## Limitations
 
 * **Same PoW only.**  Cross-PoW `chainwork` is not comparable.
@@ -132,6 +136,7 @@ simulate.py          # detection-latency backtest
 attack_sim.py        # block-level attacker under the real retarget path
 checkpoints.txt      # trusted BTC header spine
 data/  diagrams/     # cached series and generated PNGs
+resistance.md        # staleness bound vs attacker hash share
 ```
 
 ```sh
