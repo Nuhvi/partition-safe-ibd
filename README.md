@@ -129,7 +129,9 @@ is handled by *not finalizing yet*, not by calling it invalid.
 
 `band` should also be inflated by the time-elapsed-since-last-refit (staleness),
 which is exactly what the `h` axis of `tightness_vs_staleness.png` shows.  Every
-band in §4–§6 uses `m_band()`, which applies the monotone guard (§4).
+band in §4–§6 uses `m_band()`, which applies the monotone guard (§4).  §7
+replaces the point statistic `r(x)` with work accumulated since the anchor; the
+difficulty form is kept in §4–§6 because those results are built on it.
 
 ## 4. Results
 
@@ -350,7 +352,82 @@ with staleness (§5), though its trust root is the node's clock, not header
 timestamps.  The attack above is what remains — a forger who *does* keep tips
 fresh — and its price is the band.
 
-## 7. Files
+## 7. Redesign: grade the work, not the tip — `chainwork.py`
+
+§6 shows why the difficulty residual is the wrong quantity: it is a point sample
+that one block satisfies.  The natural statistic is the work the chain has
+actually done since the trusted anchor, compared with what the trend says it
+should have done in the time the node has been waiting:
+
+```
+T   = t_now − t0                          elapsed, from the NODE's clock
+dC  = C1 − C0                             candidate work since the anchor
+Wtr = ∫ D_tr(t) · 2³²/600 dt              trend work over [t0, t_now]
+q   = log10(dC) − log10(Wtr)
+```
+
+Finality requires `q ≥ −band(W, h)` **and** a hard floor
+`dC ≥ 2³² · D0`, where `D0` is the anchor's own (trusted) difficulty — without it
+a wide band could accept a chain that has not grown at all.  Header timestamps
+only enter through the work they certify; elapsed time is the node's, so it
+cannot be shortened by choice of timestamps.  `chainwork.py` calibrates `band` on
+`q` for the true chain, monotone-guarded, and reports walk-forward coverage and
+attacker cost.
+
+### Bands, coverage, and the live false positive
+
+| W | h=0.5 | h=1 | h=2 | h=4 | h=10 |
+|---|-------|-----|-----|-----|------|
+| 2y | 1.07 | 1.66 | 2.14 | 2.51 | 8.56 |
+| 4y | 0.65 | 0.69 | 0.94 | 1.73 | 3.98 |
+| 8y | 0.65 | 0.78 | 1.02 | 1.40 | n/a |
+
+Out-of-sample coverage is much better than the difficulty statistic's (band
+fixed on tests before the cutoff, scored after; nominal 95 %):
+
+| W = 4y | h=0.5 | h=1 | h=2 | h=4 |
+|--------|-------|-----|-----|-----|
+| band from ≤ 2018 | 100 % (b=0.82) | 100 % (b=0.93) | 94 % (b=0.94) | — |
+| band from ≤ 2020 | 100 % (b=0.82) | 100 % (b=0.93) | 100 % (b=1.02) | 92 % (b=1.41) |
+
+And the live false positive of §4 disappears: at the current tip `q` is
+−0.17 … +0.15 for h = 0.5–4 at W = 4 — comfortably inside the band — where the
+difficulty rule was flagging real Bitcoin at h = 0.5–1.  One historical window
+per staleness still falls outside, all of them in the 2012–2019
+ramp-and-drawdown era.
+
+### Attacker cost
+
+Sitting at the band edge no longer means one block: at W = 4 the attacker must
+produce `Wtr / 10^band` hashes across the whole elapsed interval.
+
+| h | tip difficulty: one block | chainwork: interval | ratio |
+|---|---------------------------|---------------------|-------|
+| 0.5y | $0.34 M | $2.3 B | ~6 700× |
+| 1y | $0.36 M | $3.9 B | ~10 800× |
+| 2y | $0.15 M | $3.1 B | ~20 900× |
+| 4y | $53 k | $0.52 B | ~9 800× |
+
+($0.04/TH/day; one day of Bitcoin's present hash rate ≈ $38 M, so $3.9 B ≈ 100
+network-days.)  That ~10⁴× is the redesign's point: it turns "one block clears
+it" into "produce a large fraction of a year of network work".
+
+![chainwork](diagrams/chainwork_band.png)
+
+### What this fixes, and what it does not
+
+* It removes the **point-sample** weakness: no single block clears the test, and
+  timestamp choice cannot shorten the interval.
+* It does **not** fix **staleness**.  The band still grows without bound — 3.98
+  dex at ten years for W = 4, 8.56 for W = 2 — and at h = 10 the live `q` passes
+  by only 0.14 dex on 6 samples.  The floor keeps a *non-growing* chain out, but a
+  forger who does grow can still sit at the widening edge, so **capping staleness
+  (§6) remains necessary**.
+* "Sustained" is defined here as the **whole interval** `[t0, t_now]`.  A shorter
+  trailing window is a weaker variant that would need its own calibration; using
+  the whole interval is what makes elapsed time non-negotiable.
+
+## 8. Files
 
 ```
 partition-safe-ibd/
@@ -358,6 +435,7 @@ partition-safe-ibd/
   analyze.py           # fit, calibrate, and draw all four diagrams
   attack_cost.py       # cost of a forged chain at a given checkpoint staleness
   calibration_audit.py # support, walk-forward coverage, false positives, margins
+  chainwork.py         # §7 redesign: work-since-anchor statistic, band and cost
   checkpoints.txt      # trusted BTC header spine (one header per 2016 blocks)
   data/                # cached series (BTC, BCH, BSV, XEC)
   diagrams/            # generated PNGs
@@ -374,37 +452,38 @@ python3 fetch.py                # BTC is offline; BCH/XEC hit Blockchair, BSV a 
 python3 analyze.py              # writes diagrams/*.png and prints the band table
 python3 attack_cost.py          # forged-chain cost at 10y staleness; args: [years] [$/TH/day]
 python3 calibration_audit.py    # calibration support, coverage and false positives
+python3 chainwork.py            # §7 work-since-anchor statistic + band, coverage, cost
 ```
 
 `fetch.py` caches: delete `data/<chain>.json` to refetch.
 
-## 8. Where this could go next
+## 9. Where this could go next
 
-* Move the reference model (`a, b, s, x̄, Sxx, n, fit_end`) into a node's header
-  validation path, alongside its trusted-checkpoint handling, together with a
-  `calibrate()`-derived `m(W, h)` table, so a node can self-assess a partition.
-* Replace instantaneous difficulty with **observed work rate**,
-  `Δchainwork / Δt` over a trailing window (derived from headers, no extra data).
-  Unlike difficulty, this is invariant to the DAA: a fork that lowers difficulty
-  to keep 10-minute blocks and one that keeps inherited difficulty and produces
-  slow blocks both show the same low work rate.  It also makes the tip-age gate
-  statistically robust rather than a single-block check.
+* **(done, §7) Grade work since the anchor, not tip difficulty.**  The chainwork
+  statistic removes the single-block attack and is DAA-invariant: a fork that
+  lowers difficulty to keep 10-minute blocks and one that keeps inherited
+  difficulty and produces slow blocks both show the same low work.  Still open
+  here: derive the sustained window for a trailing-window variant, and confirm
+  the whole-interval choice against the freshness gate.
+* Move the reference model (`a, b, s, x̄, Sxx, n, fit_end`) and the `band(W, h)`
+  table into a node's header validation path, alongside its trusted-checkpoint
+  handling, so a node can self-assess a partition.
+* **Recalibrate out of sample, with a support threshold and intervals.**  §4
+  shows the difficulty band's in-sample "95 %" is not coverage (76 % → 18 %);
+  §7 improves on that but is still a percentile of a thin sample (n = 6 at
+  h = 10).  Fit walk-forward, report coverage with a confidence interval, and
+  refuse to emit a band below a minimum sample size.  Replace the monotone
+  guard — a running max of noisy percentiles — with a smooth or
+  upper-confidence band.
+* **Cap staleness or absolute band width.**  Both statistics degrade the same
+  way at large `h` (§6, §7), so a maximum band (or maximum checkpoint age)
+  belongs in the rule itself, not a footnote.
 * Quantify **detection latency** for both gates as a function of hash-rate share
-  and staleness: hours until work rate resolves an asymmetric fork, versus the
+  and staleness: hours until work resolves an asymmetric fork, versus the
   near-50/50 case that stays ambiguous for many blocks.
-* Require **cumulative `chainwork` since the anchor**, not only a work rate at
-  the tip, and compare it against the trend's integral over the stale interval.
-  Without it a forger can clear the difficulty gate with a single block (§6);
-  with it the price becomes the band-edge work for the whole interval.
-* **Recalibrate out of sample.**  `calibration_audit.py` shows the in-sample "95 %"
-  is not coverage (W = 4 falls from 76 % to 18 % out of sample, h = 0 → 3), that
-  support is thin at the top end, and that the true chain is flagged today once
-  checkpoints are 6–12 months old.  Fit `m(W, h)` walk-forward, report coverage
-  with a confidence interval, refuse to emit below a support threshold, and
-  replace the monotone guard — a running max of noisy percentiles — with a
-  smooth or upper-confidence band.
 * Run a **synthetic Poisson backtest** of the freshness gate: block arrivals at
   hash share `f`, inherited difficulty, and a trailing-window `Δchainwork / Δt`
   test.  That is the missing evidence for the BIP-110-style "hours" claim in §3.
 * Build a **block-level generator** with real retarget code (≤4× per 2016 blocks,
-  MTP and `now + 2 h` limits) to confirm the closed-form §6 costs.
+  MTP and `now + 2 h` limits) to confirm the closed-form §6 costs and the §7
+  band-edge costs.
