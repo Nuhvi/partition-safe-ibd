@@ -123,9 +123,18 @@ timestamp, but `Δchainwork / Δt` over the window still exposes the gap — and
 take `τ` as a small multiple of the target block interval.  A quarter of the
 hash rate, the case that used to read as "days–weeks of latency", shows up
 either as a ~4× lower target or as ~40-minute blocks, and a window of headers
-resolves it in hours — in principle; this part is analytic and not yet
-backtested (§8).  A chain that is merely behind because it is still syncing
-is handled by *not finalizing yet*, not by calling it invalid.
+resolves it in hours.  `simulate.py` now backs that up at the block level
+(§9): below the rate edge `10^−band` the work gate fires at the first check —
+`τ` ≈ 1 h in the backtest — in every trial, while a genuine 50/50 split survives
+for days.  A chain that is merely behind because it is still syncing is handled
+by *not finalizing yet*, not by calling it invalid.
+
+![detection latency](diagrams/detection_latency.png)
+
+`simulate.py` — left: how often the gate fires within 7 days; right: how long it
+takes on the traces that do fire.  The dotted lines are the rate edges
+`10^−band`; to their left detection is immediate (≈ `τ`), and near-even splits
+fall off a cliff above them.
 
 `band` should also be inflated by the time-elapsed-since-last-refit (staleness),
 which is exactly what the `h` axis of `tightness_vs_staleness.png` shows.  Every
@@ -266,8 +275,10 @@ and worst-case fork margins (D).
   residual) or keep inherited difficulty and produce blocks hours apart (stale
   tip).  What remains genuinely ambiguous is a fork holding a large share of the
   hash rate — a near-50/50 split, where both chains produce recent tips at
-  similar difficulty.  That is the same 50/50 problem as any work-based rule.
-  The "hours" figure here is analytic, not yet backtested (§8).
+  similar difficulty.  That is the same 50/50 problem as any work-based rule;
+  `simulate.py` puts numbers on it (at a 0.94 dex band a 50 % fork escapes 86 %
+  of traces over 7 days, versus 100 % detection of a 10 % fork at ≈ 1 h and of
+  a 25 % fork within ~9 h).
 * **Staleness.**  Confidence in the *difficulty* band is a decreasing function of
   years since the last trusted checkpoint: beyond ~2 years a small fork can hide
   inside it, and beyond ~5 years the calibration itself is thin.  The tip-age /
@@ -390,6 +401,14 @@ fixed on tests before the cutoff, scored after; nominal 95 %):
 | band from ≤ 2018 | 100 % (b=0.82) | 100 % (b=0.93) | 94 % (b=0.94) | — |
 | band from ≤ 2020 | 100 % (b=0.82) | 100 % (b=0.93) | 100 % (b=1.02) | 92 % (b=1.41) |
 
+Support is thin at the top end, so `chainwork.py` also prints the window count
+`n` and a bootstrap 5–95 % interval for every band, and flags anything below
+`MIN_SUPPORT = 8`.  At W = 4 that is n = 25/24/22/18 with intervals
+[0.27, 0.82], [0.36, 0.93], [0.49, 1.02], [1.40, 1.73] at h = 0.5/1/2/4, but
+n = 6 and [2.12, 3.98] at h = 10 — flagged **THIN**, so the ten-year numbers in
+§6–§7 are indicative only.  These are still in-sample percentiles; the honest
+walk-forward bands come from the coverage columns above.
+
 And the live false positive of §4 disappears: at the current tip `q` is
 −0.17 … +0.15 for h = 0.5–4 at W = 4 — comfortably inside the band — where the
 difficulty rule was flagging real Bitcoin at h = 0.5–1.  One historical window
@@ -436,6 +455,7 @@ partition-safe-ibd/
   attack_cost.py       # cost of a forged chain at a given checkpoint staleness
   calibration_audit.py # support, walk-forward coverage, false positives, margins
   chainwork.py         # §7 redesign: work-since-anchor statistic, band and cost
+  simulate.py          # block-level Poisson backtest of the freshness/work gate
   checkpoints.txt      # trusted BTC header spine (one header per 2016 blocks)
   data/                # cached series (BTC, BCH, BSV, XEC)
   diagrams/            # generated PNGs
@@ -453,6 +473,7 @@ python3 analyze.py              # writes diagrams/*.png and prints the band tabl
 python3 attack_cost.py          # forged-chain cost at 10y staleness; args: [years] [$/TH/day]
 python3 calibration_audit.py    # calibration support, coverage and false positives
 python3 chainwork.py            # §7 work-since-anchor statistic + band, coverage, cost
+python3 simulate.py             # block-level Poisson backtest of the gate; args: [trials] [days]
 ```
 
 `fetch.py` caches: delete `data/<chain>.json` to refetch.
@@ -462,28 +483,23 @@ python3 chainwork.py            # §7 work-since-anchor statistic + band, covera
 * **(done, §7) Grade work since the anchor, not tip difficulty.**  The chainwork
   statistic removes the single-block attack and is DAA-invariant: a fork that
   lowers difficulty to keep 10-minute blocks and one that keeps inherited
-  difficulty and produces slow blocks both show the same low work.  Still open
-  here: derive the sustained window for a trailing-window variant, and confirm
-  the whole-interval choice against the freshness gate.
+  difficulty and produces slow blocks both show the same low work.  Still open:
+  a trailing-window "sustained" variant, calibrated separately from the
+  whole-interval rule.
+* **(done, `simulate.py`) Poisson backtest of the gate.**  Honest Poisson
+  arrivals, inherited difficulty, real 4×-clamped retarget.  Below the rate edge
+  `10^−band` the work gate fires at the first check (≈ `τ`, 1 h) in every trace;
+  a 50 % fork escapes 86 % of 7-day traces at a 0.94 dex band, which is the
+  residual 50/50 case quantified.  A **block-level attack generator** that
+  confirms the closed-form §6/§7 costs under the retarget clamp is still to do.
+* **(partly done) Out-of-sample calibration with support and intervals.**
+  `chainwork.py` now reports `n`, a bootstrap band interval, and a
+  `MIN_SUPPORT` floor (h = 10 is flagged THIN).  Remaining: a full walk-forward
+  table with intervals across every `W`, and replacing the monotone guard — a
+  running max of noisy percentiles — with a smooth or upper-confidence band.
 * Move the reference model (`a, b, s, x̄, Sxx, n, fit_end`) and the `band(W, h)`
   table into a node's header validation path, alongside its trusted-checkpoint
   handling, so a node can self-assess a partition.
-* **Recalibrate out of sample, with a support threshold and intervals.**  §4
-  shows the difficulty band's in-sample "95 %" is not coverage (76 % → 18 %);
-  §7 improves on that but is still a percentile of a thin sample (n = 6 at
-  h = 10).  Fit walk-forward, report coverage with a confidence interval, and
-  refuse to emit a band below a minimum sample size.  Replace the monotone
-  guard — a running max of noisy percentiles — with a smooth or
-  upper-confidence band.
 * **Cap staleness or absolute band width.**  Both statistics degrade the same
   way at large `h` (§6, §7), so a maximum band (or maximum checkpoint age)
   belongs in the rule itself, not a footnote.
-* Quantify **detection latency** for both gates as a function of hash-rate share
-  and staleness: hours until work resolves an asymmetric fork, versus the
-  near-50/50 case that stays ambiguous for many blocks.
-* Run a **synthetic Poisson backtest** of the freshness gate: block arrivals at
-  hash share `f`, inherited difficulty, and a trailing-window `Δchainwork / Δt`
-  test.  That is the missing evidence for the BIP-110-style "hours" claim in §3.
-* Build a **block-level generator** with real retarget code (≤4× per 2016 blocks,
-  MTP and `now + 2 h` limits) to confirm the closed-form §6 costs and the §7
-  band-edge costs.

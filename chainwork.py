@@ -28,6 +28,7 @@ timestamps only enter through the work they certify.
 Usage:  python3 chainwork.py [W ...]     (default 2 4 8)
 """
 import math
+import random
 import sys
 
 from analyze import load, fit, predict, YEAR
@@ -36,6 +37,7 @@ WORK = 2 ** 32
 TARGET = 600.0            # seconds per block
 TH_DAY = 1e12 * 86400     # hashes per (TH/s * day)
 HASHPRICE = 0.04          # USD per TH/s per day; scales linearly
+MIN_SUPPORT = 8           # refuse to trust a band built from fewer windows
 QS = (0.5, 1.0, 2.0, 4.0, 6.0, 10.0)
 WS = [float(a) for a in sys.argv[1:]] or [2.0, 4.0, 8.0]
 BTC = load("BTC")
@@ -109,6 +111,21 @@ def band(W, h, grid_max=10.0, step=0.5):
     return run
 
 
+def band_ci(W, h, trials=2000, seed=0):
+    """Bootstrap 5–95 % interval for the one-sided band."""
+    vals = [v for _, v in q_samples(W, h)]
+    n = len(vals)
+    if n < 2:
+        return None
+    rng = random.Random(seed)
+    bs = []
+    for _ in range(trials):
+        s = sorted(vals[rng.randrange(n)] for _ in range(n))
+        bs.append(max(0.0, -s[int(0.05 * (n - 1))]))
+    bs.sort()
+    return bs[int(0.05 * (trials - 1))], bs[int(0.95 * (trials - 1))]
+
+
 def anchor_difficulty(e):
     """Trusted chain's difficulty at the anchor (nearest sample at or before e)."""
     row = [p for p in BTC if p[0] <= e]
@@ -135,6 +152,18 @@ def main():
             n = len(q_samples(W, h))
             cells.append(f"{raw:.2f}->{g:.2f}" if raw is not None else "n/a")
         print("%-6s %s" % (f"{W:g}y", "".join("%-13s" % c for c in cells)))
+
+    print("\n=== support and band interval (bootstrap 5-95%%; MIN_SUPPORT=%d) ===" % MIN_SUPPORT)
+    print("%-6s %-5s %-5s %-9s %-16s %s" % ("W", "h", "n", "band", "interval", "verdict"))
+    for W in WS:
+        for h in (0.5, 1, 2, 4, 10):
+            vals = q_samples(W, h)
+            n = len(vals)
+            ci = band_ci(W, h)
+            verdict = "ok" if n >= MIN_SUPPORT else "THIN (do not trust)"
+            ci_s = "-" if ci is None else f"[{ci[0]:.2f}, {ci[1]:.2f}]"
+            print("%-6s %-5g %-5d %-9.2f %-16s %s"
+                  % (f"{W:g}y", h, n, band(W, h), ci_s, verdict))
 
     print("\n=== walk-forward coverage (band from tests <= cutoff, scored after) ===")
     print("%-6s %-4s %-16s %-16s %-16s" % ("W", "h", "<=2016", "<=2018", "<=2020"))
