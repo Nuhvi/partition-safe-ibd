@@ -87,6 +87,13 @@ These are flatter than the `2×/yr` column because the decade's *average* growth
 was slower than 2×/yr; they are steeper than `1.5×/yr` late on, because the
 2017–2019 ramp sits inside the longer windows.
 
+![resistance caps](diagrams/resistance_caps.png)
+
+Left: the honest growth functional `G(T)` and the attacker's bar `1/s` for
+`s` = 0.5 %, 5 %, 33 %, 49 %; each crossing is that attacker's maximum safe
+staleness.  Right: the same caps as a curve, with the closed-form growth-rate
+reference lines and the three honesty thresholds marked.
+
 ## 5. How much hash non-BTC forks actually held
 
 Measured fork-aware and from realized block times (raw difficulty ratios are
@@ -97,14 +104,14 @@ until Nov 2018):
 
 | chain | peak | when |
 |---|---|---|
-| BCH | **32.3 %** | 2017-08-01 → 2017-10-28 (EDA era) |
-| BSV | 2.5 % | 2019-11 |
-| XEC | 0.25 % | 2021 |
+| BCH | **34.4 %** | 2017-08-01 → 2017-10-28 (EDA era) |
+| BSV | 2.6 % | 2018-11, just after its fork |
+| XEC | 0.24 % | 2020-11, just after its fork |
 
-Collective (BCH+BSV+XEC): median **1.2 %** over full history, **0.5 %** in the
-last two years; work-weighted median **0.56 %**; mean over full history 3.75 %,
-but only 0.56 % over the last three years.  The peak is a single ~3-month EDA
-spike; the typical level is ~0.5 %.
+Collective (BCH+BSV+XEC), on the same ~4-month sample windows: median **1.3 %**
+over full history, **0.5 %** in the last two years; work-weighted median
+**0.58 %**; mean over full history 4.1 %, but only 0.54 % over the last three
+years.  The peak is a single post-fork EDA window; the typical level is ~0.5 %.
 
 ## 6. Three honesty thresholds
 

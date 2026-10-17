@@ -80,7 +80,7 @@ A 50 % fork escapes 86 % of 7-day traces at a 0.94 dex band.
 
 **Attack budget.**  A fork can accumulate at most its own hash over the elapsed
 interval.  Using the collective non-BTC SHA256d hash (BCH + BSV + XEC; median
-≈ 1 % of Bitcoin, 2018 peak ≈ 30 %, ≈ 0.4 % today):
+≈ 1.3 % of Bitcoin, 2017 peak 34 %, ≈ 0.5 % today):
 
 ![fork hash share](diagrams/fork_hash_share.png)
 
@@ -89,10 +89,10 @@ that era's non-BTC hash would pass.  Over every historical window:
 
 ![attack budget](diagrams/attack_budget.png)
 
-* The median window is safe to ≈ 5 years of staleness; from ≈ 4–5 years the
-  median margin crosses zero.
-* The most attacker-favourable window (2018–2020, when the non-BTC share was
-  10–78 % work-weighted) passes at every staleness.
+* The typical window is safe to ≈ 7 years of staleness; the median margin crosses
+  zero around then.
+* The attacker-favourable windows are the 2017–2018 ones, where the work-weighted
+  non-BTC share was ~6–12 %; those pass at every staleness.
 * An upward break of the real chain lowers the bar (`g > 0`); a downward break
   raises it, so it costs availability — refusing to finalize — rather than
   safety.
@@ -100,8 +100,8 @@ that era's non-BTC hash would pass.  Over every historical window:
 Anchoring on the trusted chain's own recent work instead of a fit — accept iff
 the work since the checkpoint is at least `10^−k`× the work in the equal period
 before it, with `k` set so the true chain keeps 95 % — removes the extrapolation
-blow-up entirely and is safe against the historical collective for staleness
-≤ 3 years (margin below zero on every window); it turns positive from ≈ 4 years.
+blow-up entirely.  Its median window is safe to ≈ 4 years; the 2017–2018 windows
+turn positive from ≈ 1 year.
 
 The staleness bound as a function of attacker hash share — including the
 51 %- and 67 %-honesty thresholds and how much hash non-BTC forks actually held —
@@ -131,6 +131,7 @@ fetch.py             # cache difficulty series -> data/<chain>.json
 finality.py          # the rule: statistic, isotonic band, decide()
 chainwork.py         # report and figures for the rule
 forks.py             # non-BTC SHA256d hash share of Bitcoin
+resistance.py        # staleness bound vs attacker share; resistance diagrams
 budget.py            # attack budget: can the non-BTC hash fool the rule
 simulate.py          # detection-latency backtest
 attack_sim.py        # block-level attacker under the real retarget path
@@ -144,6 +145,7 @@ python3 fetch.py            # BTC offline; BCH/XEC Blockchair; BSV a public node
 python3 finality.py         # bands, live decision, envelopes
 python3 chainwork.py        # bands, coverage, attack cost, grid figure
 python3 forks.py            # non-BTC hash share + figure
+python3 resistance.py       # staleness bound vs attacker share + figure
 python3 budget.py           # attack-budget margins over historical windows
 python3 simulate.py         # detection-latency backtest
 python3 attack_sim.py       # attacker under the retarget path

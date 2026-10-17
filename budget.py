@@ -172,9 +172,11 @@ def plot(rows, path="diagrams/attack_budget.png"):
                  label="available (worst window)")
     ax2.semilogy(hs, [100 * n for n in needed], "s--", color="#2c3e50",
                  label="needed to pass")
-    ax2.set_xlabel("checkpoint staleness h (years)"); ax2.set_ylabel("share (%, log)")
+    ax2.set_yticks([0.01, 0.1, 1, 10, 100])
+    ax2.set_yticklabels(["0.01", "0.1", "1", "10", "100"])
+    ax2.set_xlabel("checkpoint staleness h (years)"); ax2.set_ylabel("share (%)")
     ax2.set_title("attacker share: available vs needed")
-    ax2.grid(which="both", alpha=0.25); ax2.legend()
+    ax2.grid(which="both", alpha=0.2); ax2.legend()
     fig.tight_layout(); fig.savefig(path, dpi=130); plt.close(fig)
     print(f"\nwrote {path}")
 
