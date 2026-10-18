@@ -14,14 +14,16 @@ ships with a **trusted header spine**: Bitcoin's real headers, up to a
 compile-time checkpoint `t0`. From that spine it knows the network's historical
 **work rate**, and can therefore estimate how much work the network is doing
 *now*. It then refuses to finalise the chain it is downloading until that chain
-proves it carried comparable work — at least the work of `THETA` blocks at the
-**current** difficulty since `t0`:
+proves it carried comparable work — at least the work of 100 blocks at the
+**current** difficulty since `t0`.
 
-```
-finalise the candidate  iff   work(candidate from t0)  ≥  bar(t0, T)
-    bar = THETA · D̂ · 2³²      THETA = 100 blocks,  T = t_now − t0
-    D̂   = current difficulty, estimated from the spine (t ≤ t0)
-```
+With
+
+    C  =  the candidate's chainwork since the checkpoint (the sum of its blocks' work)
+    w  =  the work of one block at the estimated current difficulty D̂  =  D̂ · 2³² hashes
+    THETA  =  100 blocks — the coinbase-maturity bound
+
+the node accepts the candidate iff  `C ≥ THETA · w`.
 
 This is the **coinbase-maturity assumption applied to sync**. We set the bar to
 the work of the last 100 blocks at current difficulty — and estimate that
@@ -40,16 +42,17 @@ The one real design question is how far this holds as the checkpoint ages. The
 bar is deliberately conservative — we over-estimate difficulty, which can only
 delay finalisation — but a fork's accumulated work grows with the elapsed time
 `T` while difficulty, and so the bar, may not keep up, so the guarantee cannot
-last forever. 
+last forever.
 
-A node whose spine is older than that limit must either **upgrade** — trusting a newer, 
-subjective checkpoint shipped in the new binary — or **fail closed**, refusing to finalise 
-rather than settle a chain it cannot vouch for. That is cheap in practice: 
-most nodes on the network run a Bitcoin Core release less than three years old, 
-so a horizon of roughly three years matches how the network is actually deployed. 
+A node whose spine is older than that limit must either **upgrade** — trusting a
+newer, subjective checkpoint shipped in the new binary — or **fail closed**,
+refusing to finalise rather than settle a chain it cannot vouch for. That is
+cheap in practice: most nodes on the network run a Bitcoin Core release less than
+three years old, so a horizon of roughly three years matches how the network is
+actually deployed.
 
-The rest of this note finds that limit and backtests it on Bitcoin's real history. 
-(Experiments and lab notebook: [`../research`](../research).)
+The rest of this note finds that limit and backtests it on Bitcoin's real
+history. (Experiments and lab notebook: [`../research`](../research).)
 
 ## What the study showed
 
@@ -59,7 +62,7 @@ The rest of this note finds that limit and backtests it on Bitcoin's real histor
   a 34% attacker for ~2 days ([`horizon.png`](diagrams/horizon.png)).
 * The fix is to scale the bar with staleness: keep the 100-block term as a
   **floor**, and add the work a checkpoint-difficulty chain would have done,
-  `max(100·D̂·2³², D0·2³²·T/600)`. For `T > ~17 h` that is the age-proportional
+  `max(100·w, w0·T/600)`. For `T > ~17 h` that is the age-proportional
   "flat bar", which keeps forks out for **years instead of days**
   ([`bars.png`](diagrams/bars.png), [`security.png`](diagrams/security.png)).
 * The node must estimate current difficulty to within a factor `1/s` (2.0 dex
@@ -78,11 +81,14 @@ enough). A candidate that descends from the spine is accepted iff its work since
 `t0` clears the bar. The node sees only one chain, so the honest chain and an
 `s`-share fork are indistinguishable except through their work.
 
-Work is measured in hashes: one block at difficulty `D` costs `D·2³²`.
-Everything reduces to a single dimensionless number,
+Work is measured in hashes. Write **`w = D̂ · 2³²`** for the work of one block at
+the estimated current difficulty, **`w0 = D0 · 2³²`** for one block at the
+checkpoint difficulty, `THETA = 100` for the block bound, and `W_honest` for the
+candidate's chainwork since `t0`. The bar is `THETA · w`. Everything reduces to a
+single dimensionless number,
 
 ```
-Phi(t0,T) = bar / W_honest = THETA · D̂ · 2³² / W(t0, t0+T)
+Phi(t0,T) = bar / W_honest = THETA · w / W_honest(t0, t0+T)
           = 600 · THETA · rho / (G · T)                     T in seconds
 
 G(T)   = mean difficulty over [t0,t0+T] / D0      (how much difficulty grew)
@@ -111,14 +117,14 @@ The honest chain and an `s`-fork both accumulate work in proportion to the
 elapsed interval,
 
 ```
-W_honest(T) ≈ (T/600) · G · D0 · 2³²          (T/600 = target blocks in the interval)
+W_honest(T) ≈ (T/600) · G · w0            (T/600 = target blocks in the interval)
 W_fork(T)   =  s · W_honest(T)
 ```
 
-so a **constant** bar `100·D̂·2³²` is crossed by the fork once
+so a **constant** bar `100·w` is crossed by the fork once
 
 ```
-s · W_honest(T) ≥ 100 · D̂ · 2³²     ⟺     T ≥ T_hi(s) ≈ 600 · THETA · rho / (G · s).
+s · W_honest(T) ≥ 100 · w     ⟺     T ≥ T_hi(s) ≈ 600 · THETA · rho / (G · s).
 ```
 
 The protection horizon is finite and shrinks with the attacker's share:
@@ -173,7 +179,7 @@ acceptable (§1), the age bar is the better operating point, and the 100-block
 rule is best used as its floor:
 
 ```
-bar(T) = max( 100 · D̂ · 2³² ,  D0 · 2³² · T/600 )
+bar(T) = max( 100 · w ,  w0 · T/600 )
 ```
 
 ## 4. The estimator must be right to a factor `1/s`
@@ -224,7 +230,7 @@ live fork.
 3. Finalise iff
 
    ```
-   W_candidate(t0 → tip)  ≥  max( 100 · D̂ · 2³² ,  D0 · 2³² · T/600 )
+   W_candidate(t0 → tip)  ≥  max( 100 · w ,  w0 · T/600 )
    ```
 
    i.e. **100 current blocks and at least the work a checkpoint-difficulty chain
