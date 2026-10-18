@@ -1,45 +1,71 @@
-# Partition-safe IBD — can "100 blocks at current difficulty" finalise a partitioned node?
+# Partition-safe IBD — resisting network partitioning during initial block download
 
-A node ships with a trusted Bitcoin header spine that ends at a **compile-time
-checkpoint `t0`**. When it wakes up at wall-clock `t_now` it may be
-network-partitioned, so it cannot tell whether the chain it is offered is the
-best chain. The proposal: using the truth it already has (`t ≤ t0`), estimate the
-**current** difficulty `D̂`, and refuse to finalise a candidate unless it carries
-at least
+## The idea
+
+A node doing initial block download has no independent way to know that the
+chain it is pulling is the chain the network is on. It trusts its peers — so an
+eclipse, or a network partition that leaves it talking only to a fork's peers,
+can feed it a chain that looks valid but is not the best chain. The node finds
+out too late, when it reorgs out of transactions it had already treated as
+settled.
+
+Partition-safe IBD removes that trust **without needing the network**. The node
+ships with a **trusted header spine**: Bitcoin's real headers, up to a
+compile-time checkpoint `t0`. From that spine it knows the network's historical
+**work rate**, and can therefore estimate how much work the network is doing
+*now*. It then refuses to finalise the chain it is downloading until that chain
+proves it carried comparable work — at least the work of `THETA` blocks at the
+**current** difficulty since `t0`:
 
 ```
-bar(t0,T) = THETA · D̂ · 2³²          THETA = 100 blocks,   T = t_now − t0
+finalise the candidate  iff   work(candidate from t0)  ≥  bar(t0, T)
+    bar = THETA · D̂ · 2³²      THETA = 100 blocks,  T = t_now − t0
+    D̂   = current difficulty, estimated from the spine (t ≤ t0)
 ```
 
-of work since the checkpoint — the work of 100 current blocks, the same bound
-that makes a coinbase spendable after 100 confirmations.
+This is the **coinbase-maturity assumption applied to sync**. We set the bar to
+the work of the last 100 blocks at current difficulty — and estimate that
+difficulty on the high side, so the bar never under-counts. Anyone able to clear
+it could equally have reverted Bitcoin's most recent 100 blocks, a strictly more
+damaging attack we already take to be practically impossible; so is this one.
+The node needs only the spine and its own clock — no live data, no peer trust.
 
-This folder is the write-up. The experiments live in [`../research`](../research).
+Two properties do the work:
 
----
+* the spine is **fixed at compile time**, so a partition cannot rewrite it;
+* the bar is denominated in **current** difficulty, which the spine lets the node
+  *estimate* but an attacker cannot *forge* — work has to be hashed.
 
-## TL;DR
+The one real design question is how far this holds as the checkpoint ages. The
+bar is deliberately conservative — we over-estimate difficulty, which can only
+delay finalisation — but a fork's accumulated work grows with the elapsed time
+`T` while difficulty, and so the bar, may not keep up, so the guarantee cannot
+last forever. 
 
-* The **threat model is right** (partition resistance is a *work* question) and
-  the **estimator is the hard part** — but a **fixed 100-block threshold is the
-  wrong shape**.
-* A forked minority's work grows with the elapsed interval (`s · W_h`), so a
-  constant bar is overtaken. On real history the 100-block rule stops a 1%
-  attacker only for ~70 days and a 34% attacker for ~2 days
-  ([`horizon.png`](diagrams/horizon.png)).
-* **The margin must grow with staleness.** To keep a share `s` out at staleness
-  `T` the node must demand at least `m ≈ s · G · T / 600` blocks of
-  current-difficulty work — *proportional to T*. The natural choice is the
-  age-proportional bar `D0 · T/600 · 2³²` (the "flat bar"), which is `T/60000`
-  times stricter for `T > 17 h` and keeps forks out for **years instead of days**
+A node whose spine is older than that limit must either **upgrade** — trusting a newer, 
+subjective checkpoint shipped in the new binary — or **fail closed**, refusing to finalise 
+rather than settle a chain it cannot vouch for. That is cheap in practice: 
+most nodes on the network run a Bitcoin Core release less than three years old, 
+so a horizon of roughly three years matches how the network is actually deployed. 
+
+The rest of this note finds that limit and backtests it on Bitcoin's real history. 
+(Experiments and lab notebook: [`../research`](../research).)
+
+## What the study showed
+
+* The idea is sound and the threat model is right — partition resistance is a
+  *work* question, and the estimator is the hard part. But a **fixed** 100-block
+  bar is overtaken by a forked minority: it holds a 1% attacker for ~70 days and
+  a 34% attacker for ~2 days ([`horizon.png`](diagrams/horizon.png)).
+* The fix is to scale the bar with staleness: keep the 100-block term as a
+  **floor**, and add the work a checkpoint-difficulty chain would have done,
+  `max(100·D̂·2³², D0·2³²·T/600)`. For `T > ~17 h` that is the age-proportional
+  "flat bar", which keeps forks out for **years instead of days**
   ([`bars.png`](diagrams/bars.png), [`security.png`](diagrams/security.png)).
-* The 100-block idea survives as a **floor** and as the correct intuition for
-  *why* the checkpoint must be fresh — the recommended rule is the flat bar with
-  a 100-block floor.
-* Whatever the bar, the node must estimate difficulty to within a factor `1/s`:
-  empirically 2-week-to-2-year extrapolation is off by **0.2–4 dex**, so the
-  method can separate a 1% attacker for months but a 34% attacker only for days
-  ([`estimator.png`](diagrams/estimator.png)).
+* The node must estimate current difficulty to within a factor `1/s` (2.0 dex
+  for a 1% attacker, 0.47 dex for 34%). On real history a growth-capped
+  exponential meets the 1% tolerance for months; a raw log-log trend barely at
+  all ([`estimator.png`](diagrams/estimator.png)).
 
 ---
 
