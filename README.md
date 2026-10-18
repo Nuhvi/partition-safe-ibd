@@ -19,13 +19,16 @@ Finalize the downloaded chain only once its chainwork since the checkpoint clear
     w0  =  D0 · 2³²     work of one block at the checkpoint difficulty D0
     T   =  t_now − t0   the checkpoint's age, from the node's clock
 
-Estimate `D̂` as a **power law** in chain age — anchored at the checkpoint,
-fitted over a trailing **4 years**, and lifted by the **residual band that same
-fit needed to contain its own history** (over-estimating only delays
-finalization). Validated on 2014+ checkpoints — the post-ASIC regime — its 5th
-percentile never under-shoots. The bar holds for **years** against a ~1%
-attacker; past that a node must adopt a newer checkpoint (upgrade) or fail closed
-rather than finalize.
+Estimate `D̂` as a **power law** in chain age:
+
+    D̂(t0,T) = 10 ^ ( y0 + p · log10( age(t0+T) / age(t0) ) + r )
+
+anchored at the checkpoint (`y0 = log10 D0`), with slope `p` fitted over a
+trailing **4 years** and `r` the **residual band that same fit needed to contain
+its own history**. Over-estimating only delays finalization. Validated on 2014+
+checkpoints — the post-ASIC regime — its 5th percentile never under-shoots. The
+bar holds for **years** against a ~1% attacker; past that a node must adopt a
+newer checkpoint (upgrade) or fail closed rather than finalize.
 
 ## The idea
 
@@ -96,7 +99,7 @@ history. (Experiments and lab notebook: [`research`](research).)
   only delays finalization. Under-estimating is what hurts: the bar sinks toward
   the fork's work, which is a share `s` of the honest chain's, so the estimate
   may come in at most `1/s` low — ~100× for a 1% attacker, but only ~3× for 34%
-  ([`estimator.png`](diagrams/estimator.png)).
+  (§4).
 * Difficulty is a **power law**, not an exponential: over 2014–2026 a log-log
   fit describes it far better (R² 0.96 vs 0.83), because growth decelerates with
   age. The recommended estimate is that power law, anchored at the checkpoint,
@@ -114,6 +117,10 @@ The node holds a spine of real headers to `t0` (one per retarget period is
 enough). A candidate that descends from the spine is accepted iff its work since
 `t0` clears the bar. The node sees only one chain, so the honest chain and an
 `s`-share fork are indistinguishable except through their work.
+
+`t0` need not be the shipped checkpoint. Any history the node already
+**trusts** serves as the anchor — including a chain it finalized in an earlier
+session — and a fresher anchor means a smaller, cheaper bar (§5).
 
 Work is measured in hashes: a block at difficulty `D` contributes `D · 2³²`. Write
 `W_cand` for the candidate's chainwork since `t0`, `w = D̂ · 2³²` for one block at
@@ -258,8 +265,6 @@ difficulty in two years); the trailing-growth exponential absorbs that transitio
 by over-shooting instead, so this is a real limitation of the power-law form,
 traded for a much better low tail in the modern regime.
 
-![estimator](diagrams/estimator.png)
-
 | `log10(D̂/D_true)` (dex; 2.0 = 100×), 2014+ | 30 d (p5/p50/p95) | 90 d | 1 y | 2 y |
 |---|---|---|---|---|
 | flat (no growth) | −0.11 / −0.03 / +0.02 | −0.34 / −0.07 / +0.04 | −0.84 / −0.24 / −0.04 | −1.45 / −0.49 / −0.20 |
@@ -272,16 +277,29 @@ unsafe direction), and the unanchored **log-log trend (OLS)** is poor even at on
 day — its value at `t0` sits far from actual difficulty, which anchoring at `D0`
 fixes. The recommended power law has the best low tail: its 5th percentile is
 *above* 1 at every horizon, so it never under-shoots in the 2014+ sample, at the
-cost of over-shoot (p95 to ~2.6 dex ≈ 400×) from the self-calibrated band. That
-is the right side to spend on — over-shoot only delays finalization. A **fixed**
-multiple (e.g. ×50) would have to be sized for the worst era and then over-shoots
-everywhere else; a band that reflects how far the line actually wandered
-calibrates itself per checkpoint. It is drawn in
-[`plaw_band.png`](diagrams/plaw_band.png): for four checkpoints, the trend fitted
-to the trailing 4 years, lifted by the band it needed for its own history, with
-the realised curve staying inside.
+cost of over-shoot from the self-calibrated band. A **fixed** multiple (e.g. ×50)
+would have to be sized for the worst era and then over-shoots everywhere else; a
+band that reflects how far the line actually wandered calibrates itself per
+checkpoint.
 
 ![the self-calibrated band](diagrams/plaw_band.png)
+
+In [`plaw_band.png`](diagrams/plaw_band.png) the top panel shows four fits, each
+with the band it needed for its own history. The **bottom panel counts the same
+fits in blocks**: `100 · trend(t) / D_true(t)` blocks at the difficulty actually
+in force, since the bar is 100 blocks at the *estimate*. A point on a line is
+where a node is if it **starts syncing then**; `100` is a perfect estimate, above
+it an over-shoot (a delay), below it an under-shoot (the unsafe way). The recent
+fit sits below 100 near the end (it under-predicts); older fits run far above it,
+and the further back they start the higher they climb — the finite horizon in
+block terms.
+
+Each point is only the **first** bar, though. Once the chain clears it and those
+blocks are finalized, they become a new, trusted anchor, and the node measures
+work from *there* with a fresh bar — so finalization is progressive: the first
+bar is the expensive one, and each batch of finalized blocks pulls the next one
+back toward 100. A node that has synced before pays almost none of this, because
+it anchors on the history it already holds (§5).
 
 The one free choice is the **window length**, and it is a clean trade: a shorter
 window tracks the current regime and over-shoots less, a longer one is more
@@ -310,11 +328,26 @@ negative tail is acceptable.
 
    i.e. **100 current blocks and at least the work a checkpoint-difficulty chain
    would have done.** The band is small (it only has to cover the fit's own
-   wander), so the honest chain is finalized within hours, and the age term takes
-   over for `T ≳ 17 h` as before.
+   wander), so the honest chain is finalized within hours.
 4. Refresh the checkpoint. Each term eventually weakens and the power-law floor
    ceases to fall monotonically; no work-since-`t0` rule survives an arbitrarily
    long staleness. A stale binary must upgrade or fail closed.
+
+**The anchor is not fixed, and finalization is progressive.** Nothing in the rule
+requires `t0` to be the shipped checkpoint — only that the node *trusts* the
+history it anchors on. Two consequences:
+
+* A node that has synced before anchors on the chain it already finalized, so
+  `T` is small and the bar is cheap from the first second, regardless of how old
+  the binary's checkpoint is.
+* Within one sync, each batch of blocks that clears the bar can itself become the
+  anchor for the next measurement. The bar is then re-estimated against a fresh
+  tip, so it falls back toward 100 blocks and the node never re-pays the
+  stale-checkpoint premium. The figures' block counts are the *first* bar only;
+  they shrink as finalization proceeds.
+
+The hard-coded checkpoint is only the floor for a node with **no** history —
+a first-ever sync, or one whose stored chain has been rolled back.
 
 ## Caveats
 
@@ -345,7 +378,7 @@ cd research && ../.venv/bin/python run_all.py     # writes research/figures/*.pn
 |---|---|
 | `research/model.py` | spine, work, estimators, `bar`, `Phi`, `finalize_time` |
 | `research/exp1_window.py` | `Phi(T)`, the safe band, the staleness window |
-| `research/exp2_estimator.py` | estimator error vs staleness, tolerance lanes |
+| `research/exp2_estimator.py` | estimator error table (§4) |
 | `research/exp3_backtest.py` | availability + security rates, `Phi` heatmap |
 | `research/exp4_horizon.py` | protection horizon `T_hi(s)` |
 | `research/exp5_bars.py` | concept and "why the bar must grow" diagrams |

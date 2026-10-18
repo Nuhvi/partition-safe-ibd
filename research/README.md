@@ -33,7 +33,7 @@ is kept out iff `Phi > s`.
 | file | figure | gist |
 |---|---|---|
 | `exp1_window.py` | `window.png` | `Phi(T)` decreases; the safe set is a window `[T_lo, T_hi)`, ratio ≈ `1/s` |
-| `exp2_estimator.py` | `estimator.png` | error of `D̂/D_true` vs `T`; tolerance lanes `±log10(1/s)` |
+| `exp2_estimator.py` | (table only) | error of `D̂/D_true` vs `T`, the §4 table |
 | `exp3_backtest.py` | `availability/security/phi_heatmap.png` | honest-denial rate and fork-pass rate over `(t0,T)` |
 | `exp4_horizon.py` | `horizon.png` | protection horizon `T_hi(s)` |
 | `exp5_bars.py` | `concept.png`, `bars.png` | schematics |

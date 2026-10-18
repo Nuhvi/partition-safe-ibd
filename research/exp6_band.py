@@ -7,11 +7,13 @@ anywhere - it is the margin the *same line* needed, looking backwards, to contai
 the data it was fitted to (the largest residual of the fit).  Projected forward,
 the band asks: does the future wander further off the line than the past did?
 
-For each checkpoint we plot (a) the all-history power-law trend, (b) that trend
-lifted by its own past max-residual - the "band it would need to fit its own
-data", and (c) the realised difficulty.  The write-up's threshold is the error
-tolerance 1/s, so the band only has to reach s*Dtrue, not Dtrue; the printed
-table gives coverage with that allowance.
+For each checkpoint the figure plots (a) the trailing-4-year power-law trend,
+(b) that trend lifted by its own past max-residual - the band it needed to fit
+its own data, and (c) the realised difficulty.  The solid lines on the right
+axis convert each trend to its cost in blocks: the rule's bar is 100 blocks at
+the *estimate*, so at any time it equals 100 * trend(t) / D_true(t) blocks at
+the difficulty actually in force.  100 = a perfect estimate; above = over-shoot
+(delayed), below = under-shoot (the unsafe way).
 
 Outputs figures/plaw_band.png.
 """
@@ -53,34 +55,53 @@ def fit_past(t0):
 
 
 def fig():
-    fig, ax = figs.plt.subplots(figsize=(11, 5.6))
-    ax.plot([year_of(t) for t in M.BTC.t], M.BTC.d, color=INK, lw=1.8,
-            label="actual BTC difficulty", zorder=5)
-
+    fig, (ax, axb) = figs.plt.subplots(
+        2, 1, figsize=(12.5, 8.6), sharex=True, gridspec_kw={"height_ratios": [1.5, 1]})
+    t1 = M.BTC.t1
+    block_lines = []
     for yr, c in zip(POINTS, COLS):
         i = min(range(len(M.BTC.rows)), key=lambda i: abs(M.BTC.x(M.BTC.t[i]) - (yr - 2009)))
         t0 = M.BTC.t[i]
         pred, p, resid = fit_past(t0)
-        Ts = [(M.BTC.t1 - t0) * k / 60 for k in range(0, 61)]
+        Ts = [(t1 - t0) * k / 60 for k in range(0, 61)]
         xs = [year_of(t0 + T) for T in Ts]
         ys = [10 ** pred(T) for T in Ts]
-        ax.plot(xs, ys, color=c, lw=1.8, ls="--", zorder=3,
+        ax.plot(xs, ys, color=c, lw=1.6, ls="--", zorder=3,
                 label=f"fit to history ≤ {yr} (slope {p:.0f})")
-        ax.fill_between(xs, ys, [y * 10 ** resid for y in ys], color=c, alpha=0.13,
-                        lw=0)
-        ax.plot(xs, [y * 10 ** resid for y in ys], color=c, lw=1.0, ls=":", alpha=0.9)
+        ax.fill_between(xs, ys, [y * 10 ** resid for y in ys], color=c, alpha=0.11, lw=0)
         ax.plot([year_of(t0)], [M.BTC.D(t0)], "o", color=c, ms=5, zorder=6)
+        # the same fit read in blocks at the difficulty actually in force
+        blocks = [100.0 * y / M.BTC.D(t0 + T) for y, T in zip(ys, Ts)]
+        block_lines.append((xs, blocks, c, yr))
 
+    # ---- top: difficulty --------------------------------------------------
+    ax.plot([year_of(t) for t in M.BTC.t], M.BTC.d, color=INK, lw=1.8,
+            label="actual BTC difficulty", zorder=5)
     ax.plot([], [], color=INK, lw=1.0, ls=":", label="band = each fit's own max past residual")
     ax.set_yscale("log")
-    ax.set_xlim(2011, 2027)
-    ax.set_ylim(1e3, 3e16)
-    figs.plain_log(ax, "y", [1e3, 1e6, 1e9, 1e12, 1e15])
-    ax.set_xlabel("year")
+    ax.set_ylim(1e4, 1e17)
+    figs.plain_log(ax, "y", [1e5, 1e7, 1e9, 1e11, 1e13, 1e15])
+    figs.minor_log(ax)
     ax.set_ylabel("difficulty")
-    ax.set_title("a power law fitted to the trailing 4 years, lifted by the margin that same\n"
-                 "fit needed to contain its own data, projected forward")
+    ax.set_title("power law fitted to the trailing 4 years, lifted by the margin that same fit\n"
+                 "needed for its own data — and, below, the same fits counted in blocks")
     ax.legend(fontsize=8, loc="upper left")
+
+    # ---- bottom: the same fits, in blocks ---------------------------------
+    for xs, blocks, c, yr in block_lines:
+        axb.plot(xs, blocks, color=c, lw=1.6, zorder=3, label=f"≤ {yr}")
+    axb.axhline(100, color=INK, ls=":", lw=1.2, zorder=1)
+    axb.text(2011.3, 108, "100 blocks = a perfect estimate", fontsize=8, color=INK, va="bottom")
+    lo = min(min(b) for _, b, _, _ in block_lines)
+    hi = max(max(b) for _, b, _, _ in block_lines)
+    axb.set_yscale("log")
+    axb.set_xlim(2011, 2027)
+    axb.set_ylim(lo * 0.6, hi * 1.6)
+    figs.plain_log(axb, "y", [30, 100, 300, 1000, 3000, 10000])
+    figs.minor_log(axb)
+    axb.set_xlabel("year")
+    axb.set_ylabel("each fit in blocks, at the difficulty\nactually in force (100 = ideal)")
+    axb.legend(fontsize=8, loc="upper left", ncol=4, title="starting the sync at …")
     figs.save(fig, "plaw_band.png")
 
 

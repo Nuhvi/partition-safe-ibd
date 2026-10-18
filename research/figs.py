@@ -57,6 +57,14 @@ def plain_log(ax, which, ticks):
     axis.set_minor_locator(NullLocator())
 
 
+def minor_log(ax, which="y"):
+    """Add unlabelled 2..9 minor ticks + light minor gridlines to a log axis."""
+    from matplotlib.ticker import LogLocator
+    axis = getattr(ax, f"{which}axis")
+    axis.set_minor_locator(LogLocator(base=10.0, subs=tuple(range(2, 10))))
+    ax.grid(True, which="minor", axis=which, alpha=0.12, lw=0.5)
+
+
 def ymd(t):
     import datetime
     return datetime.datetime.fromtimestamp(t, datetime.UTC).strftime("%Y-%m")
