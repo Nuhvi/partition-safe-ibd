@@ -188,6 +188,8 @@ ESTIMATORS = {
     "flat": est_flat,
     "flatbar": est_flatbar,
     "exp-2y": lambda t0, T: est_exp(t0, T, 2.0),
+    "exp-3y": lambda t0, T: est_exp(t0, T, 3.0),
+    "exp-4y": lambda t0, T: est_exp(t0, T, 4.0),
     "exp-1y": lambda t0, T: est_exp(t0, T, 1.0),
     "exp-2y-cap2x": lambda t0, T: est_exp(t0, T, 2.0, cap_per_year=2.0),
     "ols-4y": lambda t0, T: est_ols(t0, T, 4.0),

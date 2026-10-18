@@ -42,9 +42,13 @@ is kept out iff `Phi > s`.
 
 * Window ends (`exp-2y-cap2x`): `T_lo ≈ 13–17 h`, `T_hi(1%) ≈ 44–75 d`,
   `T_hi(34%) ≈ 39–51 h`; `T_hi/T_lo ≈ 80–113 ≈ 1/s`.
-* Estimator spreads (5–95%) at 90 d / 2 y: flat 0.70/3.76, cap2x 0.67/3.71,
-  ols-4y 2.25/4.49, ols-4y+2sd 2.12/2.67. Tolerance is 2.00 dex (1%) /
-  0.47 dex (34%).
+* Estimator spreads (5–95%) at 90 d / 2 y: flat 0.70/3.76, exp-2y 0.87/4.97,
+  exp-3y 0.69/2.21, exp-4y 0.71/3.64, cap2x 0.67/3.71, ols-4y 2.25/4.49,
+  ols-4y+2sd 2.12/2.67. Tolerance is 2.00 dex (1%) / 0.47 dex (34%).
+* Estimator window/cap sweep (`exp`, uncapped unless noted): spread at 2 y is
+  5.0 dex (2 y window), 2.2 (3 y), 3.6 (4 y) — **3 y is the sweet spot**. A
+  2×/yr growth cap *hurts*: it forces under-shoot (median −0.31 dex at 2 y vs
+  +0.56 uncapped-3 y), and under-shoot is the unsafe direction. Drop the cap.
 * Availability: fixed/capped never denies; the flat bar denies 29% at 1–7 d
   (drawdowns + block-count variance), 7% at 1 y, 0% at 2 y.
 * Security at 1 y: fixed `cap2x` passes a 1% fork on ~100% of checkpoints; the

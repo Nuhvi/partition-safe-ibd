@@ -70,11 +70,11 @@ def collect_forks():
 def fork_table():
     print("\nreal forks: candidate work / bar")
     print("%-5s %-9s %-8s %-12s %-12s %s" % ("fork", "checkpoint", "shared %",
-                                              "flatbar", "100-block", "exp-2y-cap2x"))
+                                              "flatbar", "100-block", "growth 3y"))
     for name, yr, t0, w, shared, own in collect_forks():
         fb = w / M.bar(t0, M.BTC.t1 - t0, "flatbar")
         b100 = w / M.bar(t0, M.BTC.t1 - t0, "flat")
-        cap = w / M.bar(t0, M.BTC.t1 - t0, "exp-2y-cap2x")
+        cap = w / M.bar(t0, M.BTC.t1 - t0, "exp-3y")
         print("%-5s %-9s %-8s %-12s %-12s %s"
               % (name, figs.ymd(t0), f"{100*shared/w:5.0f}%", f"{fb:.3g}", f"{b100:.3g}",
                  f"{cap:.3g}"))
