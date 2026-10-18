@@ -17,9 +17,11 @@ often does it let a fork through?
 * `Chain`: a sampled header spine; difficulty is a step function per 2016-block
   period. `work(a,b)` is realised chainwork in hashes (O(log n) via prefix sums).
 * `ESTIMATORS`: ways to guess difficulty `T` ahead from `t ≤ t0` —
-  `flat`, `exp-1y`, `exp-2y`, `exp-2y-cap2x`, `ols-4y`, `ols-4y+2sd`.
-  `flatbar` is not an estimator: expressed as `D̂` it reproduces the
-  age-proportional bar `D0·T/600·2³²`.
+  `flat`, `exp-1y`, `exp-2y`, `exp-2y-cap2x`, `ols-4y`, `ols-4y+2sd`, and the
+  recommended `plaw-4y` (power law anchored at `D0`, fitted over a trailing 4 y,
+  lifted one-sided by its own max past residual). `flatbar` is not an estimator:
+  expressed as `D̂` it reproduces the age-proportional bar `D0·T/600·2³²`.
+  `FIRST = 5 y` scopes the tests to 2014+ (post-ASIC).
 * `bar`, `phi`, `finalize_time`: the rule, the dimensionless ratio
   `Phi = bar/W_honest`, and the first staleness a candidate clears it.
 
@@ -33,35 +35,38 @@ is kept out iff `Phi > s`.
 | `exp1_window.py` | `window.png` | `Phi(T)` decreases; the safe set is a window `[T_lo, T_hi)`, ratio ≈ `1/s` |
 | `exp2_estimator.py` | `estimator.png` | error of `D̂/D_true` vs `T`; tolerance lanes `±log10(1/s)` |
 | `exp3_backtest.py` | `availability/security/phi_heatmap.png` | honest-denial rate and fork-pass rate over `(t0,T)` |
-| `exp4_forks.py` | `horizon.png` | protection horizon `T_hi(s)` |
+| `exp4_horizon.py` | `horizon.png` | protection horizon `T_hi(s)` |
 | `exp5_bars.py` | `concept.png`, `bars.png` | schematics |
-| `exp6_forecast.py` | `forecast.png` | 3 y growth line vs realised difficulty; forecast/realised scatter with the `1/s` under-shoot limits |
+| `exp6_band.py` | `plaw_band.png` | the self-calibrated residual band, projected forward from several checkpoints |
+| `exp7_window.py` | `plaw_window.png` | trend and error vs fit window (2 y … all history) |
 
-`run_all.py` runs everything. Requires matplotlib (`../.venv`).
+`run_all.py` runs everything. Requires matplotlib + numpy (`../.venv`).
 
 ## Raw observations
 
-* Window ends (`exp-2y-cap2x`): `T_lo ≈ 13–17 h`, `T_hi(1%) ≈ 44–75 d`,
-  `T_hi(34%) ≈ 39–51 h`; `T_hi/T_lo ≈ 80–113 ≈ 1/s`.
-* Estimator spreads (5–95%) at 90 d / 2 y: flat 0.70/3.76, exp-2y 0.87/4.97,
-  exp-3y 0.69/2.21, exp-4y 0.71/3.64, cap2x 0.67/3.71, ols-4y 2.25/4.49,
-  ols-4y+2sd 2.12/2.67. Tolerance is 2.00 dex (1%) / 0.47 dex (34%).
-* Estimator window/cap sweep (`exp`, uncapped unless noted): spread at 2 y is
-  5.0 dex (2 y window), 2.2 (3 y), 3.6 (4 y) — **3 y is the sweet spot**. A
-  2×/yr growth cap *hurts*: it forces under-shoot (median −0.31 dex at 2 y vs
-  +0.56 uncapped-3 y), and under-shoot is the unsafe direction. Drop the cap.
-* Availability: fixed/capped never denies; the flat bar denies 29% at 1–7 d
-  (drawdowns + block-count variance), 7% at 1 y, 0% at 2 y.
-* Security at 1 y: fixed `cap2x` passes a 1% fork on ~100% of checkpoints; the
-  flat bar on ~3%. At 34%: 100% vs ~22%.
-* Real forks: from a 2017-08 BCH checkpoint the fork is 0.44× the flat bar
-  (caught) but 2.1e3× the fixed bar (passes). XEC from 2020-01: 0.16× / 554×.
-* Forecast vs the future (`exp-3y`, 430 checkpoints): median
-  `log10(Dhat/Dtrue)` is +0.02 / +0.03 / +0.21 / +0.56 dex at 30 d / 90 d / 1 y /
-  2 y — over-shoot at every horizon (safe); 5th percentile -0.07 / -0.27 / -0.66 /
-  -0.17 dex. No forecast under-shoots by >100×; 3% (90 d) and 6% (1 y)
-  under-shoot by >2.9×. The 2023 checkpoint is the only 3 y-ahead under-shoot
-  (-0.25 dex) and is inside the 34% margin.
+* Difficulty is a power law, not an exponential: log-log fit R² 0.96 over
+  2014–2026 vs 0.83 for a straight line; the realised growth rate decays with
+  age (a power-law signature), which the exponential over-shoots.
+* Recommended estimator `plaw-4y` (2014+ checkpoints): `log10(Dhat/Dtrue)` 5th
+  percentile is **+0.12 / +0.13 / +0.12 / +0.02** dex at 30 d / 90 d / 1 y / 2 y
+  — **never under-shoots** — with median +0.33 / +0.35 / +0.52 / +0.76 (`exp-3y`
+  for comparison: p5 −0.04 / −0.08 / −0.19 / −0.18, median +0.01 / +0.03 / +0.20
+  / +0.51). The band is what removes the under-shoot, at the price of a heavier
+  over-shoot (p95 to ~2.6 dex).
+* Why 2014+: a fit to 2012–13 history badly under-predicts the ASIC transition
+  (2013-05 → 2500× difficulty in 2 y), e.g. plaw-4y −2.4 dex at 2 y from 2013-01.
+  The trailing-growth exponential *over*-shoots there (+0.2 to +1.3 dex) — it
+  absorbs the boom — so pre-2014 is a real robustness edge for the exponential,
+  paid for by its heavier over-shoot in the modern era.
+* Window sweep (`exp7`, 2014+, 2 y ahead, p5 / median): 2 y −0.34/+0.27, 3 y
+  −0.06/+0.57, 4 y +0.02/+0.76, 5 y +0.15/+0.88, 6 y +0.35/+1.28, 8 y +0.49/+1.64,
+  all history +1.32/+1.75, all ≥2014 −0.01/+0.76. Longer window = safer low tail
+  but more over-shoot; every window is inside the 34% tolerance. 4 y is where the
+  low tail first clears zero; 3 y is the lower-delay option.
+* Alternative power-law designs all lost to `exp-3y` on the full 2011+ sample —
+  flat ×50 factor, global (whole-history) fit, statistical +2 sd band, and the
+  `max(power law, exponential)` hybrid (identical to the exponential). The
+  self-calibrated band on 4 y, evaluated 2014+, is the one that wins.
 
 ## Dead ends / notes
 
@@ -72,13 +77,13 @@ is kept out iff `Phi > s`.
 * **Why not "100 blocks" with a bigger constant?** A larger `THETA` scales
   `T_hi` linearly, but any constant is still overtaken; only growth with `T`
   works. The required `m(T) ≈ s·T/600` blocks is the exact statement.
-* The OLS trend estimator is surprisingly noisy *at zero staleness* (2.4 dex at
-  1 day): the fitted trend at `t0` need not equal actual `D(t0)`. Prefer a
-  trailing-window growth rate, not a global trend.
+* The unanchored OLS trend is noisy *at zero staleness*: the fitted trend at
+  `t0` need not equal actual `D(t0)`. Anchoring the fit at `D0` is what makes the
+  power law usable.
 
 ## Data
 
-`data/BTC.json` (481 rows, one per 2016 blocks, genesis→2026-09) and
-`data/{BCH,BSV,XEC}.json` (25/25/16 rows), copied from the parent repo's cache;
-`data/checkpoints.txt` is the header spine. `BTC.work` reproduces the parent
-`fetch.py`/`finality.py` convention.
+`data/BTC.json` (481 rows, one per 2016 blocks, genesis→2026-09) is the only
+file any script reads. `data/{BCH,BSV,XEC}.json` and `data/checkpoints.txt` are
+leftovers from the dropped fork analysis — kept for reference, unread. `BTC.work`
+reproduces the parent `fetch.py`/`finality.py` convention.

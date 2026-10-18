@@ -1,26 +1,18 @@
 #!/usr/bin/env python3
-"""Exp 4 - protection horizon, and what the rule says about real forks.
+"""Exp 4 - the protection horizon.
 
-(a) Horizon: for every checkpoint and share s, the first staleness at which a
-    fork of share s clears the bar, T_hi(t0,s).  Its median over checkpoints is
-    how long the rule holds; the 10th percentile is the unlucky case.
-
-(b) Real forks: BCH/BSV/XEC carry Bitcoin's genuine work up to their split, so
-    their work since a checkpoint is  W_BTC(t0,split) + W_fork(split,now).  With
-    a checkpoint younger than the split a real fork is far below the bar; with a
-    checkpoint *older* than the split the shared prefix alone can clear it.
+For every checkpoint and share s, the first staleness at which a fork of share s
+clears the bar, T_hi(t0,s).  Its median over checkpoints is how long the rule
+holds; the 10th percentile is the unlucky case.
 
 Outputs figures/horizon.png.
 """
-import math
-
 import figs
 import model as M
-from figs import BLUE, GREEN, GREY, INK, ORANGE, PURPLE, RED, SAFE
+from figs import GREY, INK, ORANGE, PURPLE
 
 RULES = ("flat", "exp-2y-cap2x", "flatbar", "ols-4y+2sd")
 SGRID = (0.001, 0.003, 0.01, 0.03, 0.1, 0.2, 0.34, 0.49)
-FORK_STEP = 20160
 
 
 def anchor(year):
@@ -29,9 +21,9 @@ def anchor(year):
 
 
 def horizon_table():
-    anchors = [anchor(y) for y in (2012, 2014, 2016, 2018, 2020, 2022, 2024)]
+    anchors = [anchor(y) for y in (2014, 2016, 2018, 2020, 2022, 2024)]
     print("protection horizon: T_hi(t0,s) = first staleness where a fork of share")
-    print("s clears the bar.  Median (10th pct) over checkpoints [2011+].\n")
+    print("s clears the bar.  Median (10th pct) over checkpoints [2014+].\n")
     print("%-14s %s" % ("rule", "".join("%-16s" % f"s={100*s:g}%" for s in SGRID)))
     for est in RULES:
         cells = []
@@ -49,42 +41,10 @@ def horizon_table():
         print("%-14s %s" % (est, "".join("%-16s" % c for c in cells)))
 
 
-def collect_forks():
-    """For each (chain, checkpoint) -> (work/bar for flatbar, work/bar for exp-2y-cap2x)."""
-    forks = {c: M.Chain(c) for c in ("BCH", "BSV", "XEC")}
-    out = []
-    for name, fc in forks.items():
-        split = fc.t[0]
-        for yr in (2015, 2016, 2017.2, 2017.35, 2017.6, 2018, 2019, 2020, 2021):
-            t0 = anchor(yr)
-            if t0 >= split:
-                shared = 0.0
-            else:
-                shared = M.BTC.work(t0, split)
-            own = fc.work(split, fc.t1)
-            w = shared + own
-            out.append((name, yr, t0, w, shared, own))
-    return out
-
-
-def fork_table():
-    print("\nreal forks: candidate work / bar")
-    print("%-5s %-9s %-8s %-12s %-12s %s" % ("fork", "checkpoint", "shared %",
-                                              "flatbar", "100-block", "growth 3y"))
-    for name, yr, t0, w, shared, own in collect_forks():
-        fb = w / M.bar(t0, M.BTC.t1 - t0, "flatbar")
-        b100 = w / M.bar(t0, M.BTC.t1 - t0, "flat")
-        cap = w / M.bar(t0, M.BTC.t1 - t0, "exp-3y")
-        print("%-5s %-9s %-8s %-12s %-12s %s"
-              % (name, figs.ymd(t0), f"{100*shared/w:5.0f}%", f"{fb:.3g}", f"{b100:.3g}",
-                 f"{cap:.3g}"))
-
-
 def fig_horizon():
     fig, ax = figs.plt.subplots(figsize=(10, 5.4))
     cols = {"flat": GREY, "exp-2y-cap2x": INK, "flatbar": PURPLE, "ols-4y+2sd": ORANGE}
-    anchors = [anchor(y) for y in
-               (2011.25 + 0.5 * k for k in range(0, 32))]
+    anchors = [anchor(y) for y in (2014.25 + 0.5 * k for k in range(0, 25))]
     for est in RULES:
         xs, med, p10 = [], [], []
         for s in SGRID:
@@ -109,7 +69,6 @@ def fig_horizon():
 
 def main():
     horizon_table()
-    fork_table()
     fig_horizon()
 
 

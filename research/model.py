@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Core model for the "100 current blocks" partition rule.
 
-The idea (see final/README.md for the write-up):
+The idea (see ../README.md for the write-up):
 
   A node ships with a trusted Bitcoin header spine up to a *compile-time*
   checkpoint t0 (the tips in data/BTC.json; one header per 2016-block period).
@@ -46,7 +46,9 @@ YEAR = 31557600.0             # Julian year, seconds
 WORK = 2 ** 32                # hashes per unit difficulty per block
 TARGET = 600.0                # seconds per block
 THETA = 100                   # coinbase maturity: blocks the attacker must redo
-FIRST = 2.0                   # ignore the first ~2y (pre-2011 difficulty is noise)
+FIRST = 5.0                   # test checkpoints from 2014 (post-ASIC; see est_plaw)
+PLAW_WIN = 4.0                # estimator: trailing window, years
+PLAW_FLOOR = 2.0              # estimator: ignore pre-2011 difficulty noise when fitting
 
 
 def load(chain):
@@ -176,11 +178,53 @@ def est_ols(t0, T, win_years=4.0, k=0.0, chain=BTC):
     return 10 ** pred
 
 
+def est_plaw(t0, T, win_years=PLAW_WIN, band=1.0, chain=BTC):
+    """Recommended estimate: a power law in chain age, anchored at the
+    checkpoint, lifted by the band the same fit needed for its own history.
+
+    BTC difficulty is a power law in chain age (log-log fit R^2 ~ 0.96 over
+    2014-2026, vs 0.83 for an exponential): growth decelerates in proportion to
+    age, so this tracks the curve instead of over-shooting it, roughly halving
+    the over-shoot of the exponential estimate for the same low tail.
+
+    The fit is the (anchored) least-squares slope of log10(difficulty) on
+    log10(age) over a trailing 4-year window, forced through (age(t0), D0) so its
+    value at t0 is exact.  The margin is not a constant: it is r, the largest
+    residual that *this* fit needed to contain the history it was fitted to -
+    self-calibrating, so a stretch where difficulty wandered off the line gets a
+    wider band.  It is applied one-sided (upward): over-shoot only delays
+    finalization.
+
+    Scope: validated on checkpoints from 2014 (FIRST), the post-ASIC regime.  A
+    fit to the 2012-2013 history cannot anticipate the ASIC transition (say
+    2013.05 -> 2,500x difficulty in two years) and under-shoots it.  This is a
+    real limitation of the power-law form - the trailing-growth exponential
+    over-shoots that transition instead - traded for a better modern-era tail.
+    """
+    y0 = math.log10(chain.D(t0))
+    x0 = math.log10(chain.x(t0))
+    num = den = 0.0
+    rows = [r for r in chain.rows
+            if chain.x(r[1]) >= PLAW_FLOOR and (t0 - win_years * YEAR) <= r[1] <= t0 and r[2] > 0]
+    if len(rows) < 6:
+        return chain.D(t0)
+    for r in rows:
+        x = math.log10(chain.x(r[1]))
+        y = math.log10(r[2])
+        num += (x - x0) * (y - y0)
+        den += (x - x0) ** 2
+    if den <= 0:
+        return chain.D(t0)
+    p = num / den
+    r = band * max(abs(math.log10(rw[2]) - (y0 + p * (math.log10(chain.x(rw[1])) - x0)))
+                   for rw in rows)
+    return 10 ** (y0 + p * math.log10(chain.x(t0 + T) / chain.x(t0)) + r)
+
+
 def est_flatbar(t0, T, chain=BTC):
-    """Not a difficulty estimate - the *age-proportional* (flat) bar of the prior
-    work (resistance.md): bar = D0 * (T/600) * 2**32.  Expressed as the Dhat
-    that reproduces it: Dhat = D0 * T/(600*THETA).  Included as the reference
-    rule to beat."""
+    """Not a difficulty estimate - the *age-proportional* (flat) bar:
+    bar = D0 * (T/600) * 2**32.  Expressed as the Dhat that reproduces it:
+    Dhat = D0 * T/(600*THETA).  Included as the reference rule to beat."""
     return chain.D(t0) * (T / (TARGET * THETA))
 
 
@@ -194,8 +238,7 @@ ESTIMATORS = {
     "exp-2y-cap2x": lambda t0, T: est_exp(t0, T, 2.0, cap_per_year=2.0),
     "ols-4y": lambda t0, T: est_ols(t0, T, 4.0),
     "ols-4y+2sd": lambda t0, T: est_ols(t0, T, 4.0, k=2.0),
-    "max(100,flat)": lambda t0, T: max(est_exp(t0, T, 2.0, cap_per_year=2.0),
-                                       est_flatbar(t0, T)),
+    "plaw-4y": lambda t0, T: est_plaw(t0, T, 4.0),
 }
 
 

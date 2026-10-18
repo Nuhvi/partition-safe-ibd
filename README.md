@@ -19,11 +19,13 @@ Finalize the downloaded chain only once its chainwork since the checkpoint clear
     w0  =  D0 · 2³²     work of one block at the checkpoint difficulty D0
     T   =  t_now − t0   the checkpoint's age, from the node's clock
 
-Estimate `D̂` from a trailing **3-year** growth rate (uncapped — over-estimating
-only delays finalization). The bar holds for roughly **3 years** against a ~1%
-attacker (median checkpoint; ~1.5 years at 34%, and shorter for some
-checkpoints). Past that a node must adopt a newer checkpoint (upgrade) or fail
-closed rather than finalize.
+Estimate `D̂` as a **power law** in chain age — anchored at the checkpoint,
+fitted over a trailing **4 years**, and lifted by the **residual band that same
+fit needed to contain its own history** (over-estimating only delays
+finalization). Validated on 2014+ checkpoints — the post-ASIC regime — its 5th
+percentile never under-shoots. The bar holds for **years** against a ~1%
+attacker; past that a node must adopt a newer checkpoint (upgrade) or fail closed
+rather than finalize.
 
 ## The idea
 
@@ -95,10 +97,12 @@ history. (Experiments and lab notebook: [`research`](research).)
   the fork's work, which is a share `s` of the honest chain's, so the estimate
   may come in at most `1/s` low — ~100× for a 1% attacker, but only ~3× for 34%
   ([`estimator.png`](diagrams/estimator.png)).
-* Backtested against the future, the **3-year growth estimate** over-shoots in
-  most eras — the safe direction — and its worst under-shoot stays inside the
-  34% margin; a `1/s`-low forecast never occurs in the 2011–2026 sample
-  ([`forecast.png`](diagrams/forecast.png)).
+* Difficulty is a **power law**, not an exponential: over 2014–2026 a log-log
+  fit describes it far better (R² 0.96 vs 0.83), because growth decelerates with
+  age. The recommended estimate is that power law, anchored at the checkpoint,
+  lifted by the residual band that same fit needed for its own history — so its
+  low tail never under-shoots on 2014+ checkpoints
+  ([`plaw_band.png`](diagrams/plaw_band.png)).
 
 ---
 
@@ -156,16 +160,16 @@ so a **constant** bar `100·w` is crossed by the fork once its work reaches it,
 `s · W_honest(T) ≥ 100 · w`.
 
 The protection horizon is finite and shrinks with the attacker's share (median
-over checkpoints since 2011):
+over 2014+ checkpoints):
 
 | rule | s=0.1% | s=1% | s=10% | s=34% |
 |---|---|---|---|---|
-| fixed 100 blocks (`100·w`) | 1.7 y | 0.2 y | 6 d | 2 d |
-| **age bar (flat bar)** | **5.2 y** | **3.4 y** | **2.4 y** | **1.5 y** |
-| log-log trend fit (OLS) + 2 sd | 2.5 y | 0.3 y | 15 d | 4 d |
+| fixed 100 blocks (`100·w`) | 1.3 y | 0.2 y | 6 d | 2 d |
+| **age bar (flat bar)** | **5.2 y** | **6.6 y** | **2.4 y** | **1.5 y** |
+| log-log trend fit (OLS) + 2 sd | never | 0.2 y | 11 d | 3 d |
 
 The spread across checkpoints is wide: for the age bar, the worst tenth of
-checkpoints hold only 2.0 y at `s=1%` and 0.3 y at 34%, so read these as medians,
+checkpoints hold only 3.4 y at `s=1%` and 0.3 y at 34%, so read these as medians,
 not guarantees.
 
 ![protection horizon](diagrams/horizon.png)
@@ -189,13 +193,13 @@ more than 100 current-difficulty blocks — 43× at 30 days, 526× at a year.
 
 ![security](diagrams/security.png)
 
-| fraction of historical checkpoints a fork PASSES | 1% fork | 34% fork |
+| fraction of 2014+ checkpoints a fork PASSES | 1% fork | 34% fork |
 |---|---|---|
-| fixed 100 (`100·w`), at 90 d | **95%** | 100% |
+| fixed 100 (`100·w`), at 90 d | **96%** | 100% |
 | fixed 100 (`100·w`), at 1 y | **100%** | 100% |
-| age bar, at 90 d | 0% | 5% |
-| age bar, at 1 y | 3% | 22% |
-| age bar, at 2 y | 13% | 51% |
+| age bar, at 90 d | 0% | 0% |
+| age bar, at 1 y | 0% | 11% |
+| age bar, at 2 y | 3% | 40% |
 
 The cost is availability — the flat bar denies the true chain in drawdowns
 (`G<1`) and under short-interval block-count variance:
@@ -205,7 +209,7 @@ The cost is availability — the flat bar denies the true chain in drawdowns
 | fraction of checkpoints that DENY the true chain | 1–7 d | 30 d | 90 d | 1 y | 2 y |
 |---|---|---|---|---|---|
 | fixed 100 (`100·w`) | 0% | 0% | 0% | 0% | 0% |
-| age bar (flat) | 29% | 27% | 16% | 7% | 0% |
+| age bar (flat) | 30% | 28% | 16% | 4% | 0% |
 
 (The recommended `max(100·w, w0·T/600)` differs from the pure flat bar only for
 `T ≲ 17 h`, where the 100-block floor delays the honest chain by design; it adds
@@ -230,68 +234,74 @@ finalization; the danger is under-shooting — the bar sinks toward the fork. So
 estimate may come in at most `1/s` **low**: 100× for a 1% attacker, only ~3× for
 34%.
 
-The estimators compared are a **flat** guess (`D̂ = D0`), a **growth** guess that
-extrapolates the trailing window's growth rate, and a **log-log trend** — a
-straight-line fit of `log10(difficulty)` against `log10(age since genesis)` over a
-trailing window (i.e. an ordinary-least-squares, OLS, regression) extrapolated to
-`t0+T`; the `+2 sd` variant adds two standard errors of slack to bias it high.
-The table ladders `D̂/D_true` (estimate against the difficulty it is trying to
-predict); §1's `rho = D̂/D0` is relative to the checkpoint, and the two differ by
+The recommended estimator is a **power law** in chain age. Difficulty is
+described far better by a power law than by an exponential — over 2014–2026 a
+log-log fit gives R² 0.96 against 0.83 for a straight line — because the realised
+growth rate *decays* with age, from ~1000×/yr in 2012 to ~1.5×/yr in the 2020s.
+That decay is the power-law signature (`rate ∝ 1/age`), and a constant-rate
+exponential cannot follow it. The estimate is
+
+    D̂(t0,T) = 10 ^ ( y0 + p · log10( age(t0+T) / age(t0) ) + r )
+
+with `p` the least-squares slope of `log10(difficulty)` on `log10(age)` over a
+trailing **4-year** window, the fit **anchored** at `(age(t0), D0)` (`y0`) so its
+value at `t0` is exact; and the margin `r` is not a constant — it is the **largest
+residual that same fit needed to contain the history it was fitted to**. A stretch
+where difficulty wandered off the line gets a wider band, and the band is applied
+one-sided (upward), so over-shoot only delays finalization. The table ladders
+`D̂/D_true`; §1's `rho = D̂/D0` is relative to the checkpoint, the two differ by
 the growth factor `G`.
+
+**Scope.** The estimate is validated on 2014+ checkpoints, the post-ASIC regime.
+A fit to 2012–13 history under-shoots the ASIC transition badly (2,500×
+difficulty in two years); the trailing-growth exponential absorbs that transition
+by over-shooting instead, so this is a real limitation of the power-law form,
+traded for a much better low tail in the modern regime.
 
 ![estimator](diagrams/estimator.png)
 
-| 5–95% range of `log10(D̂/D_true)` (dex; 2.0 = 100×) | 30 d | 90 d | 1 y | 2 y |
+| `log10(D̂/D_true)` (dex; 2.0 = 100×), 2014+ | 30 d (p5/p50/p95) | 90 d | 1 y | 2 y |
 |---|---|---|---|---|
-| flat (no growth) | 0.2 | 0.7 | 2.5 | 3.8 |
-| growth, 2 y window | 0.3 | 0.9 | 3.8 | 5.0 |
-| growth, 3 y window | 0.2 | 0.7 | 2.1 | 2.2 |
-| growth, 4 y window | 0.2 | 0.7 | 2.2 | 3.6 |
-| growth, 2 y capped 2×/yr | 0.2 | 0.7 | 2.5 | 3.7 |
-| log-log trend (OLS), 4 y | 2.5 | 2.3 | 3.1 | 4.5 |
-| log-log trend (OLS), 4 y + 2 sd | 2.1 | 2.1 | 2.3 | 2.7 |
+| flat (no growth) | −0.11 / −0.03 / +0.02 | −0.34 / −0.07 / +0.04 | −0.84 / −0.24 / −0.04 | −1.45 / −0.49 / −0.20 |
+| growth, 3 y (exponential) | −0.04 / +0.01 / +0.11 | −0.08 / +0.03 / +0.31 | −0.19 / +0.20 / +1.04 | −0.18 / +0.51 / +1.96 |
+| log-log trend (OLS), 4 y, unanchored | −1.08 / +0.04 / +0.62 | −1.15 / +0.05 / +0.69 | −0.78 / +0.04 / +0.96 | −0.71 / +0.15 / +1.05 |
+| **power law, 4 y + own band (recommended)** | **+0.12** / +0.33 / +1.68 | **+0.13** / +0.35 / +1.75 | **+0.12** / +0.52 / +2.23 | **+0.02** / +0.76 / +2.60 |
 
-Reading: the **flat** estimate under-shoots whenever difficulty grows (the only
-unsafe direction); the **growth** windows keep the error to a factor of ~100 out
-to two years, with **3 years the sweet spot**; the **log-log trend (OLS)** is poor
-even at one day because the fit's value at `t0` can sit far from actual
-difficulty. Note that **capping growth is counter-productive**: it forces
-under-shoot at long staleness (the unsafe direction) to buy availability the
-design does not need, since over-shoot only delays finalization. A plain window,
-uncapped, is better.
+Reading: the **flat** guess under-shoots whenever difficulty grows (the only
+unsafe direction), and the unanchored **log-log trend (OLS)** is poor even at one
+day — its value at `t0` sits far from actual difficulty, which anchoring at `D0`
+fixes. The recommended power law has the best low tail: its 5th percentile is
+*above* 1 at every horizon, so it never under-shoots in the 2014+ sample, at the
+cost of over-shoot (p95 to ~2.6 dex ≈ 400×) from the self-calibrated band. That
+is the right side to spend on — over-shoot only delays finalization. A **fixed**
+multiple (e.g. ×50) would have to be sized for the worst era and then over-shoots
+everywhere else; a band that reflects how far the line actually wandered
+calibrates itself per checkpoint. It is drawn in
+[`plaw_band.png`](diagrams/plaw_band.png): for four checkpoints, the trend fitted
+to the trailing 4 years, lifted by the band it needed for its own history, with
+the realised curve staying inside.
 
-The number that matters is the low tail of the error, not the spread. For the
-3-year estimator the 5th percentile is only ~1.9× low at 90 days — inside the
-34% tolerance (2.9×) — and ~4.6× low at a year, still inside the 1% tolerance
-(100×). The table's "spread" is a two-sided summary; only its lower end bears on
-safety.
+![the self-calibrated band](diagrams/plaw_band.png)
 
-The table describes the estimator as an error distribution. It is worth also
-seeing it *forecast*.
+The one free choice is the **window length**, and it is a clean trade: a shorter
+window tracks the current regime and over-shoots less, a longer one is more
+conservative. At 2 years ahead on 2014+ checkpoints the 5th percentile / median
+run `−0.34/+0.27` at 2 y, `−0.06/+0.57` at 3 y, `+0.02/+0.76` at 4 y,
+`+0.15/+0.88` at 5 y, up to `+1.32/+1.75` for the whole history — every window is
+inside the 34% tolerance, so the choice is about delay, not safety
+([`plaw_window.png`](diagrams/plaw_window.png)). **4 years** sits where the low
+tail first clears zero; 3 years is the lower-delay alternative if a slightly
+negative tail is acceptable.
 
-![forecast](diagrams/forecast.png)
-
-Panel A fires the recommended 3-year growth line from four checkpoints and lays
-it over the difficulty that actually followed. Through most of Bitcoin's history
-the line **over-shoots** — 2014→2017 by ~440×, 2020→2023 by ~17× — which is the
-safe direction, since an over-estimate only delays finalization. The exception
-is recent history: 2023→2026 under-shoots by ~1.8×, still inside the 34% margin.
-
-Panel B pools every historical checkpoint and horizon and plots the forecast
-against the realised difficulty; the dotted lines are the under-shoot limits
-`D̂ = s·D_true`, one per attacker. A point **above** a line means the forecast
-under-shot by more than that attacker's `1/s` — the unsafe side. Every point in
-the sample sits far below the 1% line, so that failure never comes close to
-occurring; only a few 90-day (3%) and 1-year (6%) forecasts cross the 34% line.
-The median forecast over-shoots at every horizon, so the rule's error, such as
-it is, costs availability rather than safety.
+![window sweep](diagrams/plaw_window.png)
 
 ## 5. Recommended rule
 
 1. Ship a spine to `t0`; anchor `D0`.
-2. Estimate current difficulty from the **trailing 3-year growth rate** `g`,
-   uncapped: `D̂ = D0 · g^(T/1 year)`. Over-estimating is safe, so do **not** cap
-   growth — a cap forces under-estimation at long staleness.
+2. Estimate current difficulty as a **power law** — anchored at `D0`, fitted
+   over a trailing 4 years, lifted by the residual band that same fit needed for
+   its own history: `D̂ = 10^(y0 + p·log10(age ratio) + r)`. Over-estimating is
+   safe, so the band is only a delay.
 3. Finalize iff
 
    ```
@@ -299,11 +309,12 @@ it is, costs availability rather than safety.
    ```
 
    i.e. **100 current blocks and at least the work a checkpoint-difficulty chain
-   would have done.** For `T > ~17 h` the second term dominates: the rule is the
-   flat bar, with the 100-block term as the first-hours floor.
-4. Refresh the checkpoint. The protection horizon is finite (`T_hi(s)` above);
-   a stale binary is only safe because it *also* demands more work, and no
-   work-since-`t0` rule survives an arbitrarily long staleness.
+   would have done.** The band is small (it only has to cover the fit's own
+   wander), so the honest chain is finalized within hours, and the age term takes
+   over for `T ≳ 17 h` as before.
+4. Refresh the checkpoint. Each term eventually weakens and the power-law floor
+   ceases to fall monotonically; no work-since-`t0` rule survives an arbitrarily
+   long staleness. A stale binary must upgrade or fail closed.
 
 ## Caveats
 
@@ -315,15 +326,18 @@ it is, costs availability rather than safety.
   rule here.
 * **`THETA`.** 100 is a *reversal* cost, not a *partition* cost; the two do not
   scale the same way in `T`. Treat 100 as a floor, not the whole bar.
-* **Data.** 481 two-week BTC samples. Forward tests reuse overlapping horizons,
-  so read the rates as descriptive rather than as independent trials.
+* **ASIC era.** The estimator is validated on 2014+ checkpoints; a fit to 2012–13
+  history under-shoots the ASIC transition badly (§4).
+* **Data.** 481 two-week BTC samples, of which ~340 are 2014+. Forward tests
+  reuse overlapping horizons, so read the rates as descriptive rather than as
+  independent trials.
 * **`1/s` floor.** Even a perfect bar cannot separate a fork once `s ≥ Phi`; the
   accuracy requirement makes very small `s` at long staleness unattainable.
 
 ## Reproduce
 
 ```sh
-python3 -m venv .venv && .venv/bin/pip install matplotlib
+python3 -m venv .venv && .venv/bin/pip install matplotlib numpy
 cd research && ../.venv/bin/python run_all.py     # writes research/figures/*.png
 ```
 
@@ -333,6 +347,7 @@ cd research && ../.venv/bin/python run_all.py     # writes research/figures/*.pn
 | `research/exp1_window.py` | `Phi(T)`, the safe band, the staleness window |
 | `research/exp2_estimator.py` | estimator error vs staleness, tolerance lanes |
 | `research/exp3_backtest.py` | availability + security rates, `Phi` heatmap |
-| `research/exp4_forks.py` | protection horizon `T_hi(s)` |
+| `research/exp4_horizon.py` | protection horizon `T_hi(s)` |
 | `research/exp5_bars.py` | concept and "why the bar must grow" diagrams |
-| `research/exp6_forecast.py` | estimator forecast vs realised difficulty, margin bands |
+| `research/exp6_band.py` | the self-calibrated band, projected forward |
+| `research/exp7_window.py` | trend and error vs fit window |

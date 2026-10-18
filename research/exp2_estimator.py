@@ -67,16 +67,18 @@ def main():
                 bbox=dict(fc="white", ec="none", alpha=0.75))
     cols = {"flat": GREY, "flatbar": "#8e44ad", "exp-2y": BLUE, "exp-1y": "#5dade2",
             "exp-3y": "#148f77", "exp-4y": "#b03a2e", "exp-2y-cap2x": INK,
-            "ols-4y": ORANGE, "ols-4y+2sd": PURPLE, "max(100,flat)": "#7f8c8d"}
+            "ols-4y": ORANGE, "ols-4y+2sd": PURPLE, "plaw-4y": RED}
     labels = {"flat": "flat (no growth)", "exp-2y": "growth, 2 y window",
               "exp-3y": "growth, 3 y", "exp-4y": "growth, 4 y",
-              "exp-2y-cap2x": "2 y, capped 2x/yr", "ols-4y+2sd": "OLS 4 y + 2 sd"}
-    PLOT = ("flat", "exp-2y", "exp-3y", "exp-4y", "exp-2y-cap2x", "ols-4y+2sd")
+              "exp-2y-cap2x": "2 y, capped 2x/yr", "ols-4y+2sd": "OLS 4 y + 2 sd",
+              "plaw-4y": "power law, 4 y + own band (recommended)"}
+    PLOT = ("flat", "exp-2y", "exp-3y", "exp-4y", "exp-2y-cap2x", "ols-4y+2sd", "plaw-4y")
     for est, d in data.items():
         if est not in PLOT:
             continue
         med = [10 ** quant(d[T], 0.5) for T in TS]
-        ax.plot(days, med, color=cols[est], lw=2, label=labels.get(est, est))
+        ax.plot(days, med, color=cols[est], lw=2.6 if est == "plaw-4y" else 2,
+                label=labels.get(est, est))
         lo = [10 ** quant(d[T], 0.05) for T in TS]
         hi = [10 ** quant(d[T], 0.95) for T in TS]
         ax.fill_between(days, lo, hi, color=cols[est], alpha=0.10)

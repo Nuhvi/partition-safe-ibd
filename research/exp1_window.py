@@ -28,7 +28,7 @@ from figs import BLUE, GREEN, INK, ORANGE, PURPLE, RED, GREY
 
 SHARES = (0.001, 0.01, 0.1, 0.34)
 ANCHORS = (2014, 2016, 2019, 2022, 2024)
-EST = "exp-3y"
+EST = "plaw-4y"
 
 
 def anchor_at(year):
@@ -53,15 +53,6 @@ def phi_curve(t0, est, Ts):
     for T in Ts:
         w = M.BTC.work(t0, t0 + T)
         out.append(M.bar(t0, T, est) / w if w > 0 else float("inf"))
-    return out
-
-
-def oracle_curve(t0, Ts):
-    """Phi with a perfect estimator (Dhat = true current difficulty)."""
-    out = []
-    for T in Ts:
-        w = M.BTC.work(t0, t0 + T)
-        out.append(M.THETA * M.BTC.D(t0 + T) * M.WORK / w if w > 0 else float("inf"))
     return out
 
 

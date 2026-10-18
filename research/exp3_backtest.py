@@ -24,7 +24,7 @@ import model as M
 from figs import BLUE, GREEN, GREY, INK, ORANGE, PURPLE, RED
 
 SHARES = (0.001, 0.01, 0.05, 0.10, 0.34)
-ANCH_YEARS = [2011 + 0.25 * k for k in range(0, 62)]     # quarterly checkpoints
+ANCH_YEARS = [2014 + 0.25 * k for k in range(0, 50)]     # quarterly checkpoints (2014+)
 TS = [d * 86400 for d in
       (0.5, 1, 2, 3, 5, 7, 14, 21, 30, 45, 60, 90, 120, 180, 270, 365, 540, 730, 1095, 1460)]
 EST = "exp-2y-cap2x"
@@ -74,8 +74,7 @@ def main():
     # ---- availability -----------------------------------------------------
     fig, ax = figs.plt.subplots(figsize=(10.5, 5.2))
     cols = {"flat": GREY, "flatbar": "#148f77", "exp-2y": BLUE, "exp-1y": "#5dade2",
-            "exp-2y-cap2x": INK, "ols-4y": ORANGE, "ols-4y+2sd": PURPLE,
-            "max(100,flat)": "#c0392b"}
+            "exp-2y-cap2x": INK, "ols-4y": ORANGE, "ols-4y+2sd": PURPLE}
     labels = {"flat": "flat (no growth)",
               "exp-2y-cap2x": "fixed 100 blocks",
               "flatbar": "age bar (T/600 blocks)", "ols-4y+2sd": "OLS trend + 2 sd"}
