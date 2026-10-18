@@ -59,8 +59,8 @@ is kept out iff `Phi > s`.
 ## Dead ends / notes
 
 * **`max(100, flat)` is just the flat bar.** The 100-block floor only binds for
-  `T < 17 h`, where it changes nothing (the flat bar already denies ~29%). It is
-  harmless and intuitive but adds no security — recorded so it is not re-tried.
+  `T < 17 h`, where it adds no security (the flat bar is already safe) and merely
+  delays the honest chain. Recorded so it is not re-tried.
 * **`min` is wrong**: it would let a fork through at short `T`.
 * **Why not "100 blocks" with a bigger constant?** A larger `THETA` scales
   `T_hi` linearly, but any constant is still overtaken; only growth with `T`
