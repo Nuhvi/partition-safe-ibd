@@ -1,5 +1,21 @@
 # Partition-safe IBD — resisting network partitioning during initial block download
 
+## TL;DR
+
+A node can safely finalize a proposed best chain despite possibility of network partitioning,
+once its chainwork since the checkpoint clears
+
+    C  ≥  max( 100 · w ,  w0 · T/600 )
+
+    C  =  candidate chainwork since the checkpoint
+    w  =  D̂ · 2³²   one block at current difficulty; estimate D̂ from the spine
+                     using a trailing 2-year growth rate capped at 2×/year (bias high)
+    w0 =  D0 · 2³²   one block at the checkpoint difficulty
+    T  =  t_now − t0   staleness (the node's clock)
+
+Good for roughly **3 years**; a node older than that must adopt a newer checkpoint
+(upgrade) or fail closed rather than finalise.
+
 ## The idea
 
 A node doing initial block download has no independent way to know that the
