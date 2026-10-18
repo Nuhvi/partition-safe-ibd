@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report and figures for the work-since-anchor rule (see README §2).
+"""Report and figures for the fitted-band variant of the rule.
 
 The statistic, calibration and decision live in finality.py; this module only
 prints the tables and draws diagrams/chainwork_grid.png.

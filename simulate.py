@@ -15,7 +15,7 @@ simulates it directly:
 
 Gates evaluated at T (never before tau):
   stale tip   reject if T - (time of last block) > tau
-  interval    reject if work(t0, T) < trend_work(t0, T) / 10^band   (README §2)
+  interval    reject if work(t0, T) < trend_work(t0, T) / 10^band
   window      reject if work(T-L, T) / L < trend rate / 10^band
 
 The interval gate has no built-in latency: the trend work grows with the node's

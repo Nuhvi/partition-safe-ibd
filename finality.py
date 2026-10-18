@@ -1,25 +1,20 @@
 #!/usr/bin/env python3
-"""Canonical finality rule: grade work since the trusted anchor.
+"""Finality rules for a partitioned node, and their calibration.
 
-This is the entry point the README's decision rule describes.  It owns the
-statistic, the calibration and the decision, so a node does not have to reassemble
-them:
+The rule to use is the **flat bar** (`decide_flat`, resistance.md):
 
-    trusted anchor   (time t0, difficulty D0)
-    candidate tip    (time t1, cumulative work C1)
-    node clock       t_now
-    elapsed          T  = t_now - t0                     (the node's clock)
-    observed work    dC = C1 - C0
-    trend work       Wtr = integral of D_tr(t)*2^32/600 over [t0, t_now]
-    statistic        q  = log10(dC) - log10(Wtr)
+    accept iff  dC >= D0 * (2^32/600) * T          T = now - t0, the node's clock
+    and, optionally, the tip is fresh
 
-    reject if  dC < 2^32 * D0                (hard floor: chain has not grown)
-    reject if  q  < -band(W, h)              h = T in years
-    accept otherwise
+where `dC` is the candidate's work since the trusted anchor and `D0` the anchor
+difficulty.  A fork holding a share `s` of believable hash passes iff
+`s >= 1/G(T)` with `G(T) = mean difficulty over [t0, now] / D0`.
 
-`band` is calibrated on `q` for the true chain and made non-decreasing in `h`
-by **isotonic regression** (PAVA) rather than a running max; the fit is global
-over the staleness grid, so the band cannot shrink as the checkpoints age.
+The rest of this module is the *fitted-trend* variant (`decide`, `band`,
+`isotonic`, `q_samples`): it grades `dC` against a trend integral with a band
+`10^-b`, which is weaker — the attacker passes through the band the rule needs
+for downward breaks (`s >= 10^(-g-b)`).  It is kept for the comparison in
+resistance.md §10.
 
 Usage:  python3 finality.py [W] [h_years]
 """
@@ -202,6 +197,27 @@ def floor_work(e):
     return WORK * anchor_difficulty(e)
 
 
+def bar_work(anchor_time, t_now):
+    """The flat bar: the constant-difficulty work over the elapsed interval."""
+    return anchor_difficulty(anchor_time) * WORK / TARGET * (t_now - anchor_time) * YEAR
+
+
+def decide_flat(anchor_time, cand_work, t_now, tip_time=None, tau=None):
+    """The flat bar (resistance.md §1).  Returns (ok, ratio, reason).
+
+    Accept iff the candidate's work since the checkpoint is at least the
+    anchor-difficulty work over the interval; optionally also require a fresh tip
+    (the tip age must come from the node's clock, not the header).
+    """
+    T = t_now - anchor_time
+    if T <= 0:
+        return False, float("nan"), "no elapsed time"
+    if tip_time is not None and tau is not None and t_now - tip_time > tau:
+        return False, float("nan"), "stale tip"
+    r = cand_work / bar_work(anchor_time, t_now)
+    return r >= 1.0, r, (f"work = {r:.2f}x bar" if r >= 1.0 else f"work = {r:.2f}x bar (< 1)")
+
+
 def decide(anchor_time, cand_work, t_now, W, band_fn=None):
     """Apply the finality rule.  Returns (ok, reason, q, band)."""
     band_fn = band_fn or band
@@ -255,22 +271,23 @@ def envelope_report():
 # ---------------------------------------------------------------- self-check
 def main():
     WS = [float(sys.argv[1])] if len(sys.argv) > 1 else [2.0, 4.0, 8.0]
-    print("finality rule: q = log10(work since anchor) - log10(trend integral)")
-    print("band: isotonic (PAVA), no running max;  floor: one block at anchor difficulty\n")
+    print("the flat bar: accept iff work since the checkpoint >= anchor-difficulty work\n")
 
-    print("=== isotonic vs running max on the chainwork band (W=4) ===")
-    for h in (0.5, 1, 2, 4, 6, 10):
-        raw = band_raw(4.0, h)
-        iso = band(4.0, h)
-        run = 0.0
-        for hh in (i * 0.5 for i in range(1, int(round(h / 0.5)) + 1)):
-            b = band_raw(4.0, hh)
-            if b is not None:
-                run = max(run, b)
-        print("  h=%-4g raw=%-6s isotonic=%-6.2f running-max=%.2f"
-              % (h, "n/a" if raw is None else f"{raw:.2f}", iso, run))
+    print("=== live tip (candidate = the real chain) ===")
+    for h in (0.5, 1, 2, 3, 4, 6, 10):
+        e = X_NOW - h
+        ok, r, why = decide_flat(e, work_between(e, X_NOW), X_NOW)
+        print("  h=%-4g %-7s %s" % (h, "ACCEPT" if ok else "REJECT", why))
 
-    print("\n=== live decision (anchor = X_NOW - h, candidate = the real chain) ===")
+    print("\n=== a fork holding a share s of the real work (all else equal) ===")
+    h = 4.0
+    e = X_NOW - h
+    real = work_between(e, X_NOW)
+    for s in (0.005, 0.02, 0.05, 0.33, 0.49):
+        ok, r, _ = decide_flat(e, s * real, X_NOW)
+        print("  s=%-5.1f%%  %-7s work/bar=%.3f" % (100 * s, "ACCEPT" if ok else "REJECT", r))
+
+    print("\n=== the fitted-trend variant (weaker; see resistance.md) ===")
     for W in WS:
         for h in (0.5, 1, 2, 4):
             e = X_NOW - h
