@@ -1,7 +1,7 @@
 # research/ — experiments for the partition-safe IBD rule
 
 Lab notebook for the "100 blocks at current difficulty" idea. The polished
-write-up is in [`../final`](../final); this folder is where the numbers came
+write-up is in [`../README.md`](../README.md); this folder is where the numbers came
 from.
 
 ## Question

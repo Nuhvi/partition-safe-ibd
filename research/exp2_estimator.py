@@ -56,14 +56,15 @@ def main():
     days = [T / 86400 for T in TS]
 
     fig, ax = figs.plt.subplots(figsize=(11, 5.6))
-    ax.axhspan(-2, 2, color="#eaf2f8", zorder=0)
-    ax.axhline(0, color=INK, lw=1)
-    for s, lab, c in ((0.01, "1% attacker", GREEN), (0.34, "34% attacker", RED)):
-        tol = math.log10(1 / s)
+    ax.axhspan(0.002, 0.01, color="#fdecea", zorder=0)
+    ax.axhline(1, color=INK, lw=1)
+    for s, lab, c in ((0.01, "100x", GREEN), (0.34, "3x", RED)):
+        tol = 1 / s
         ax.axhline(tol, color=c, ls="--", lw=1)
-        ax.axhline(-tol, color=c, ls=":", lw=1)
-        ax.text(days[-1], tol, f"  +log(1/{100*s:g}%) = {tol:.2f} dex", color=c,
-                fontsize=8, va="center")
+        ax.text(days[-1] * 0.98, tol * 1.06,
+                f"{lab} low is the safe limit (a {100*s:g}% attacker)",
+                color=c, fontsize=8, ha="right", va="bottom",
+                bbox=dict(fc="white", ec="none", alpha=0.75))
     cols = {"flat": GREY, "flatbar": "#8e44ad", "exp-2y": BLUE, "exp-1y": "#5dade2",
             "exp-3y": "#148f77", "exp-4y": "#b03a2e", "exp-2y-cap2x": INK,
             "ols-4y": ORANGE, "ols-4y+2sd": PURPLE, "max(100,flat)": "#7f8c8d"}
@@ -74,17 +75,19 @@ def main():
     for est, d in data.items():
         if est not in PLOT:
             continue
-        med = [quant(d[T], 0.5) for T in TS]
+        med = [10 ** quant(d[T], 0.5) for T in TS]
         ax.plot(days, med, color=cols[est], lw=2, label=labels.get(est, est))
-        lo = [quant(d[T], 0.05) for T in TS]
-        hi = [quant(d[T], 0.95) for T in TS]
+        lo = [10 ** quant(d[T], 0.05) for T in TS]
+        hi = [10 ** quant(d[T], 0.95) for T in TS]
         ax.fill_between(days, lo, hi, color=cols[est], alpha=0.10)
-    ax.set_xscale("log")
-    ax.set_xlim(days[0], days[-1]); ax.set_ylim(-3.2, 3.2)
-    ax.set_xlabel("staleness T (days)")
-    ax.set_ylabel("log10( estimated / true current difficulty )  [dex]")
-    ax.set_title("estimator error: median line, 5-95% band; +error overshoots "
-                 "the bar (delays finalisation), -error under-protects")
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.set_xlim(days[0], days[-1]); ax.set_ylim(0.002, 200)
+    figs.plain_log(ax, "x", [1, 10, 100, 1000])
+    figs.plain_log(ax, "y", [0.01, 0.1, 1, 10, 100])
+    ax.set_xlabel("checkpoint age T (days)")
+    ax.set_ylabel("estimated / true current difficulty   (1 = perfect)")
+    ax.set_title("estimator error: above 1 over-estimates (only delays finalization); "
+                 "below 1 under-protects")
     ax.legend(ncol=2, fontsize=8, loc="upper left")
     figs.save(fig, "estimator.png")
 

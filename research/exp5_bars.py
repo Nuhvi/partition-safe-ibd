@@ -50,41 +50,42 @@ def concept():
     ax.text(97, 0.6, "t_now", color=GREY, fontsize=9)
 
     ax.text(2, 1.6,
-            "rule:  finalise the candidate iff its work since t0  >=  bar(t0, T)\n"
-            "       the node estimates the current difficulty Dhat from the spine,\n"
-            "       bar = THETA * Dhat * 2**32   (THETA = 100 current blocks)",
+            "rule:  finalize the candidate iff its work since t0  >=  the bar\n"
+            "       the bar is 100 blocks at the current difficulty, which the\n"
+            "       node estimates from the spine",
             ha="left", va="center", fontsize=9, color=INK,
             bbox=dict(boxstyle="round", fc="#f4f6f7", ec=GREY))
     figs.save(fig, "concept.png")
 
 
 def bars():
-    t0 = M.BTC.t[10 + int((M.BTC.x(M.BTC.t[-1]) - 2) / 1)]  # ignore
     # pick a recent-ish checkpoint with room to extrapolate
     i = min(range(len(M.BTC.rows)), key=lambda i: abs(M.BTC.x(M.BTC.t[i]) - (2021 - 2009)))
     t0 = M.BTC.t[i]
+    w0 = M.BTC.D(t0) * M.WORK            # work of one block at the checkpoint difficulty
     Ts = [3600 * 2 ** (k / 6) for k in range(0, 67)]
     Ts = [T for T in Ts if t0 + T <= M.BTC.t1]
 
     fig, ax = figs.plt.subplots(figsize=(10.5, 5.4))
-    honest = [M.BTC.work(t0, t0 + T) for T in Ts]
-    ax.plot([T / 86400 for T in Ts], honest, color=GREEN, lw=2.4, label="honest work W_h")
+    honest = [M.BTC.work(t0, t0 + T) / w0 for T in Ts]
+    ax.plot([T / 86400 for T in Ts], honest, color=GREEN, lw=2.4,
+            label="honest chain (full network)")
     for s, c in ((0.01, BLUE), (0.1, ORANGE), (0.34, RED)):
         ax.plot([T / 86400 for T in Ts], [s * w for w in honest], color=c, lw=1.6,
-                label=f"fork work, s={100*s:g}%")
-    bar100 = [M.bar(t0, T, "flat") for T in Ts]
-    barflat = [M.bar(t0, T, "flatbar") for T in Ts]
-    ax.plot([T / 86400 for T in Ts], bar100, color=INK, lw=2.4, ls="--",
-            label="fixed bar: 100 current blocks")
-    ax.plot([T / 86400 for T in Ts], barflat, color="#8e44ad", lw=2.4,
-            label="age bar: D0 * (T/600) (flat bar)")
+                label=f"fork with {100*s:g}% of the hash rate")
+    ax.plot([T / 86400 for T in Ts], [M.bar(t0, T, "flat") / w0 for T in Ts],
+            color=INK, lw=2.4, ls="--", label="fixed bar: 100 blocks")
+    ax.plot([T / 86400 for T in Ts], [M.bar(t0, T, "flatbar") / w0 for T in Ts],
+            color="#8e44ad", lw=2.4, label="age bar: one block per 10 min of age")
     ax.set_xscale("log"); ax.set_yscale("log")
-    ax.set_xlabel("staleness T (days)")
-    ax.set_ylabel("work since checkpoint (hashes)")
-    ax.set_title(f"checkpoint {figs.ymd(t0)}: a constant bar is crossed by the "
+    figs.plain_log(ax, "x", [0.1, 1, 10, 100])
+    figs.plain_log(ax, "y", [10, 100, 1000, 10000])
+    ax.set_xlabel("checkpoint age T (days)")
+    ax.set_ylabel("work since checkpoint, in blocks at checkpoint difficulty")
+    ax.set_title(f"checkpoint {figs.ymd(t0)}: the fixed bar is crossed by the "
                  "fork; the age bar stays between fork and honest")
     ax.legend(fontsize=8, loc="lower right", ncol=2)
-    ax.set_ylim(1e22, 1e28)
+    ax.set_ylim(8, 40000)
     figs.save(fig, "bars.png")
 
 

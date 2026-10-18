@@ -28,7 +28,7 @@ from figs import BLUE, GREEN, INK, ORANGE, PURPLE, RED, GREY
 
 SHARES = (0.001, 0.01, 0.1, 0.34)
 ANCHORS = (2014, 2016, 2019, 2022, 2024)
-EST = "exp-2y-cap2x"
+EST = "exp-3y"
 
 
 def anchor_at(year):
@@ -75,18 +75,20 @@ def main():
         Ts_c = [T for T in Ts if t0 + T <= M.BTC.t1]
         ys = phi_curve(t0, EST, Ts_c)
         ax.plot([T / 86400 for T in Ts_c], ys, color=c, lw=2, label=f"{yr} checkpoint")
-    ax.axhspan(0.001, 1, color=figs.SAFE, zorder=0)
+    ax.axhspan(0.01, 1, color=figs.SAFE, zorder=0)
     ax.axhline(1, color=INK, lw=1.2)
     ax.axhline(0.01, color=RED, ls="--", lw=1.2)
-    ax.text(0.09, 1.25, "Phi > 1: honest chain too young, nothing finalises",
+    ax.text(0.09, 1.3, "above 1: nothing finalizes (chain too young)",
             fontsize=8, color=GREY)
-    ax.text(0.09, 0.012, "Phi <= 1% : a 1% fork would pass", fontsize=8, color=RED)
+    ax.text(0.09, 0.011, "below 1%: a 1% fork would pass", fontsize=8, color=RED)
     ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_ylim(1e-4, 1e3)
     ax.set_xlim(0.08, 3000)
-    ax.set_xlabel("checkpoint staleness T (days)")
-    ax.set_ylabel("Phi = required work / honest work")
-    ax.set_title(f"A. the safe band  s < Phi <= 1  (rule: {EST}, THETA={M.THETA})")
+    figs.plain_log(ax, "x", [0.1, 1, 10, 100, 1000])
+    figs.plain_log(ax, "y", [0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000])
+    ax.set_xlabel("checkpoint age T (days)")
+    ax.set_ylabel("bar / honest work  (Phi)")
+    ax.set_title("A. the safe band   1% < Phi <= 1   (1% attacker)")
     ax.legend(loc="lower left", fontsize=8)
 
     # ---- figure B: window ends vs attacker share, one anchor --------------
@@ -102,10 +104,12 @@ def main():
         ax2.text(Ts_b[0] / 86400 * 1.05, s * 1.08, f"{100*s:g}%", color=c, fontsize=8)
     ax2.set_xscale("log"); ax2.set_yscale("log")
     ax2.set_ylim(5e-4, 1e3); ax2.set_xlim(Ts_b[0] / 86400, Ts_b[-1] / 86400)
-    ax2.set_xlabel("checkpoint staleness T (days)")
-    ax2.set_ylabel("Phi")
-    ax2.set_title(f"B. one checkpoint ({figs.ymd(t0)}): the window\n"
-                  "below 1: finalises; below a share: that attacker passes")
+    figs.plain_log(ax2, "x", [0.1, 1, 10, 100, 1000])
+    figs.plain_log(ax2, "y", [0.001, 0.01, 0.1, 1, 10, 100, 1000])
+    ax2.set_xlabel("checkpoint age T (days)")
+    ax2.set_ylabel("bar / honest work  (Phi)")
+    ax2.set_title("B. one checkpoint (2022-01): the window\n"
+                  "finalizes below 1; a fork passes below its share")
     ax2.legend(loc="lower left", fontsize=8)
     figs.save(fig, "window.png")
 

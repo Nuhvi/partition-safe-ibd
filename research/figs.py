@@ -5,6 +5,7 @@ import os
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIG = os.path.join(HERE, "figures")
@@ -37,6 +38,23 @@ def save(fig, name):
     plt.close(fig)
     print(f"wrote {path}")
     return path
+
+
+def _plain(v, _=None):
+    """Plain decimal labels (no 10^n / 1e5), with thousands separators."""
+    if abs(v) >= 1000:
+        return f"{v:,.0f}"
+    if abs(v) >= 1:
+        return f"{v:g}"
+    return f"{v:g}"
+
+
+def plain_log(ax, which, ticks):
+    """Log axis with plain-number ticks (use instead of 10^n labels)."""
+    axis = getattr(ax, f"{which}axis")
+    axis.set_major_locator(FixedLocator(ticks))
+    axis.set_major_formatter(FuncFormatter(_plain))
+    axis.set_minor_locator(NullLocator())
 
 
 def ymd(t):

@@ -97,8 +97,10 @@ def fig_horizon():
         ax.plot(xs, med, color=cols[est], lw=2, marker="o", ms=4, label=f"{est} (median)")
         ax.plot(xs, p10, color=cols[est], lw=1, ls=":", marker=".")
     ax.set_xscale("log"); ax.set_yscale("log")
-    ax.set_xlabel("attacker share s (%)")
-    ax.set_ylabel("staleness T_hi at which the fork passes (days)")
+    figs.plain_log(ax, "x", [0.1, 1, 10, 50])
+    figs.plain_log(ax, "y", [1, 3, 10, 30, 100, 300, 1000])
+    ax.set_xlabel("attacker share of honest hash rate (%)")
+    ax.set_ylabel("checkpoint age at which the fork passes (days)")
     ax.set_title("protection horizon: how long the checkpoint stays safe "
                  "(solid = median checkpoint, dotted = 10th pct)")
     ax.legend(fontsize=8)

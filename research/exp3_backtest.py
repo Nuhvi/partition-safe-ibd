@@ -77,18 +77,19 @@ def main():
             "exp-2y-cap2x": INK, "ols-4y": ORANGE, "ols-4y+2sd": PURPLE,
             "max(100,flat)": "#c0392b"}
     labels = {"flat": "flat (no growth)",
-              "exp-2y-cap2x": "fixed 100 blocks, capped growth",
-              "flatbar": "age bar (T/600 blocks)", "ols-4y+2sd": "OLS 4y + 2 sd"}
+              "exp-2y-cap2x": "fixed 100 blocks",
+              "flatbar": "age bar (T/600 blocks)", "ols-4y+2sd": "OLS trend + 2 sd"}
     for est, d in data.items():
         if est not in CURATED:
             continue
-        ys = [d[T][1] if T in d else float("nan") for T in TS]
-        ax.plot(days, [1 - y for y in ys], color=cols[est], lw=2.2, marker="o", ms=3,
+        ys = [100 * (1 - d[T][1]) if T in d else float("nan") for T in TS]
+        ax.plot(days, ys, color=cols[est], lw=2.2, marker="o", ms=3,
                 label=labels.get(est, est))
-    ax.set_xscale("log"); ax.set_ylim(-0.03, 1.03)
-    ax.set_xlabel("staleness T (days)")
-    ax.set_ylabel("fraction of checkpoints where the true chain is DENIED")
-    ax.set_title("availability: how often the rule refuses to finalise real Bitcoin\n"
+    ax.set_xscale("log"); ax.set_ylim(-3, 103)
+    figs.plain_log(ax, "x", [1, 10, 100, 1000])
+    ax.set_xlabel("checkpoint age T (days)")
+    ax.set_ylabel("checkpoints that DENY the true chain (%)")
+    ax.set_title("availability: how often the rule refuses to finalize real Bitcoin\n"
                  "(lower is better)")
     ax.legend(fontsize=8, ncol=2)
     figs.save(fig, "availability.png")
@@ -100,12 +101,13 @@ def main():
     for est, ls in ((EST, "-"), (REC, ":")):
         d = data[est]
         for s in PLOT_SHARES:
-            ys = [d[T][2][s] if T in d else float("nan") for T in TS]
+            ys = [100 * d[T][2][s] if T in d else float("nan") for T in TS]
             ax.plot(days, ys, color=scols[s], lw=2, marker="o", ms=3, ls=ls,
                     label=f"{100*s:g}%  ({'fixed 100' if est == EST else 'age bar'})")
-    ax.set_xscale("log"); ax.set_ylim(-0.03, 1.03)
-    ax.set_xlabel("staleness T (days)")
-    ax.set_ylabel("fraction of checkpoints where a fork of share s PASSES")
+    ax.set_xscale("log"); ax.set_ylim(-3, 103)
+    figs.plain_log(ax, "x", [1, 10, 100, 1000])
+    ax.set_xlabel("checkpoint age T (days)")
+    ax.set_ylabel("checkpoints where a fork of share s PASSES (%)")
     ax.set_title("security: fixed 100-block bar (solid) vs age-proportional bar (dotted); "
                  "lower is better")
     ax.legend(fontsize=8, ncol=2)
@@ -128,10 +130,10 @@ def main():
                                                       rotation=90, fontsize=7)
     ax.set_yticks(range(0, len(ANCH_YEARS), 4))
     ax.set_yticklabels([f"{ANCH_YEARS[i]:.0f}" for i in range(0, len(ANCH_YEARS), 4)])
-    ax.set_xlabel("staleness T (days)"); ax.set_ylabel("checkpoint year")
-    ax.set_title(f"log10 Phi, rule={REC}: red = Phi>1 (true chain denied), "
-                 "green = finalises, dark green = fork territory")
-    fig.colorbar(im, ax=ax, fraction=0.035, label="log10 Phi")
+    ax.set_xlabel("checkpoint age T (days)"); ax.set_ylabel("checkpoint year")
+    ax.set_title(f"Phi, rule={REC}: red = nothing finalizes (Phi>1), "
+                 "green = finalizes, dark green = fork territory")
+    fig.colorbar(im, ax=ax, fraction=0.035, label="Phi (log scale)")
     figs.save(fig, "phi_heatmap.png")
 
     # ---- tables -----------------------------------------------------------
