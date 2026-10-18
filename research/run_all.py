@@ -4,7 +4,7 @@ import runpy
 import sys
 
 for mod in ("exp1_window", "exp2_estimator", "exp3_backtest",
-            "exp4_forks", "exp5_bars"):
+            "exp4_forks", "exp5_bars", "exp6_forecast"):
     print(f"\n================ {mod} ================")
     sys.stdout.flush()
     runpy.run_module(mod, run_name="__main__")

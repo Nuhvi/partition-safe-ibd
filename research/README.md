@@ -33,8 +33,9 @@ is kept out iff `Phi > s`.
 | `exp1_window.py` | `window.png` | `Phi(T)` decreases; the safe set is a window `[T_lo, T_hi)`, ratio ≈ `1/s` |
 | `exp2_estimator.py` | `estimator.png` | error of `D̂/D_true` vs `T`; tolerance lanes `±log10(1/s)` |
 | `exp3_backtest.py` | `availability/security/phi_heatmap.png` | honest-denial rate and fork-pass rate over `(t0,T)` |
-| `exp4_forks.py` | `horizon.png` | protection horizon `T_hi(s)`; BCH/BSV/XEC vs the bar |
+| `exp4_forks.py` | `horizon.png` | protection horizon `T_hi(s)` |
 | `exp5_bars.py` | `concept.png`, `bars.png` | schematics |
+| `exp6_forecast.py` | `forecast.png` | 3 y growth line vs realised difficulty; forecast/realised scatter with the `1/s` under-shoot limits |
 
 `run_all.py` runs everything. Requires matplotlib (`../.venv`).
 
@@ -55,6 +56,12 @@ is kept out iff `Phi > s`.
   flat bar on ~3%. At 34%: 100% vs ~22%.
 * Real forks: from a 2017-08 BCH checkpoint the fork is 0.44× the flat bar
   (caught) but 2.1e3× the fixed bar (passes). XEC from 2020-01: 0.16× / 554×.
+* Forecast vs the future (`exp-3y`, 430 checkpoints): median
+  `log10(Dhat/Dtrue)` is +0.02 / +0.03 / +0.21 / +0.56 dex at 30 d / 90 d / 1 y /
+  2 y — over-shoot at every horizon (safe); 5th percentile -0.07 / -0.27 / -0.66 /
+  -0.17 dex. No forecast under-shoots by >100×; 3% (90 d) and 6% (1 y)
+  under-shoot by >2.9×. The 2023 checkpoint is the only 3 y-ahead under-shoot
+  (-0.25 dex) and is inside the 34% margin.
 
 ## Dead ends / notes
 

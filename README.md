@@ -95,6 +95,10 @@ history. (Experiments and lab notebook: [`research`](research).)
   the fork's work, which is a share `s` of the honest chain's, so the estimate
   may come in at most `1/s` low — ~100× for a 1% attacker, but only ~3× for 34%
   ([`estimator.png`](diagrams/estimator.png)).
+* Backtested against the future, the **3-year growth estimate** over-shoots in
+  most eras — the safe direction — and its worst under-shoot stays inside the
+  34% margin; a `1/s`-low forecast never occurs in the 2011–2026 sample
+  ([`forecast.png`](diagrams/forecast.png)).
 
 ---
 
@@ -262,29 +266,27 @@ The number that matters is the low tail of the error, not the spread. For the
 (100×). The table's "spread" is a two-sided summary; only its lower end bears on
 safety.
 
-## 5. Real forks, and the late-split bound
+The table describes the estimator as an error distribution. It is worth also
+seeing it *forecast*.
 
-BCH/BSV/XEC carry Bitcoin's genuine prefix work, then their own. "shared prefix"
-is the fraction of the candidate's own work that is Bitcoin's (mined before the
-fork's split); each cell is candidate work / bar, so `<1` = caught.
+![forecast](diagrams/forecast.png)
 
-| fork, checkpoint | shared prefix | age bar | fixed 100 |
-|---|---|---|---|
-| BCH, 2017-03 | 6% | **0.86** | 4.3e3 |
-| BCH, 2017-08 (at split) | 0% | **0.44** | 2.1e3 |
-| BCH, 2018-01 | 0% | **0.22** | 996 |
-| XEC, 2020-01 | 98% | **0.16** | 554 |
+Panel A fires the recommended 3-year growth line from four checkpoints and lays
+it over the difficulty that actually followed. Through most of Bitcoin's history
+the line **over-shoots** — 2014→2017 by ~440×, 2020→2023 by ~17× — which is the
+safe direction, since an over-estimate only delays finalization. The exception
+is recent history: 2023→2026 under-shoots by ~1.8×, still inside the 34% margin.
 
-The age bar catches every real fork from a checkpoint near or after the split;
-the fixed 100-block bar never does. But that is not sufficient: if the checkpoint
-predates the split, the shared prefix hands the fork genuine work, and when the
-prefix spans most of the interval it alone can clear the bar (BCH at a 2014-12
-checkpoint = 8.95× the age bar). The closer the split sits to the checkpoint, the
-smaller that head start — XEC at 2020-01 is only ten months before its split and
-is caught (0.16×). So a sound checkpoint must post-date any live fork, and by a
-wide margin.
+Panel B pools every historical checkpoint and horizon and plots the forecast
+against the realised difficulty; the dotted lines are the under-shoot limits
+`D̂ = s·D_true`, one per attacker. A point **above** a line means the forecast
+under-shot by more than that attacker's `1/s` — the unsafe side. Every point in
+the sample sits far below the 1% line, so that failure never comes close to
+occurring; only a few 90-day (3%) and 1-year (6%) forecasts cross the 34% line.
+The median forecast over-shoots at every horizon, so the rule's error, such as
+it is, costs availability rather than safety.
 
-## 6. Recommended rule
+## 5. Recommended rule
 
 1. Ship a spine to `t0`; anchor `D0`.
 2. Estimate current difficulty from the **trailing 3-year growth rate** `g`,
@@ -313,8 +315,8 @@ wide margin.
   rule here.
 * **`THETA`.** 100 is a *reversal* cost, not a *partition* cost; the two do not
   scale the same way in `T`. Treat 100 as a floor, not the whole bar.
-* **Data.** 481 two-week BTC samples; fork series are 25/25/16 points, so the
-  fork table is illustrative.
+* **Data.** 481 two-week BTC samples. Forward tests reuse overlapping horizons,
+  so read the rates as descriptive rather than as independent trials.
 * **`1/s` floor.** Even a perfect bar cannot separate a fork once `s ≥ Phi`; the
   accuracy requirement makes very small `s` at long staleness unattainable.
 
@@ -331,5 +333,6 @@ cd research && ../.venv/bin/python run_all.py     # writes research/figures/*.pn
 | `research/exp1_window.py` | `Phi(T)`, the safe band, the staleness window |
 | `research/exp2_estimator.py` | estimator error vs staleness, tolerance lanes |
 | `research/exp3_backtest.py` | availability + security rates, `Phi` heatmap |
-| `research/exp4_forks.py` | protection horizon, real forks, late splits |
+| `research/exp4_forks.py` | protection horizon `T_hi(s)` |
 | `research/exp5_bars.py` | concept and "why the bar must grow" diagrams |
+| `research/exp6_forecast.py` | estimator forecast vs realised difficulty, margin bands |
