@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""Shared figure helpers so every experiment looks the same."""
+import os
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+FIG = os.path.join(HERE, "figures")
+os.makedirs(FIG, exist_ok=True)
+
+plt.rcParams.update({
+    "figure.dpi": 130,
+    "font.size": 10,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+})
+
+INK = "#1b2430"
+RED = "#c0392b"
+BLUE = "#2471a3"
+GREEN = "#1e8449"
+ORANGE = "#ca6f1e"
+GREY = "#7f8c8d"
+PURPLE = "#7d3c98"
+SAFE = "#d5f5e3"      # safe band fill
+DEAD = "#fdebd0"      # nothing-finalises fill
+
+
+def save(fig, name):
+    path = os.path.join(FIG, name)
+    fig.tight_layout()
+    fig.savefig(path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    print(f"wrote {path}")
+    return path
+
+
+def ymd(t):
+    import datetime
+    return datetime.datetime.fromtimestamp(t, datetime.UTC).strftime("%Y-%m")
