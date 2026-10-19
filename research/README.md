@@ -7,26 +7,29 @@ from.
 ## Question
 
 A node ships a trusted Bitcoin spine to a compile-time checkpoint `t0`, wakes up
-at `t_now` possibly partitioned, estimates the work of one block now, `ŵ`, from
-the spine, and finalises a candidate only if its work since `t0` is at least
-`THETA·ŵ` (`THETA=100`). How often does that deny the honest chain, and how often
-does it let a fork through?
+at `t_now` possibly partitioned, estimates the work of one block now relative to
+the checkpoint, `ρ = ŵ/w0`, and finalises a candidate only if it carries at least
+`100·ρ` checkpoint blocks since `t0`. How often does that deny the honest chain,
+and how often does it let a fork through?
 
 ## Model (`model.py`)
 
 * `Chain`: a sampled header spine; difficulty is a step function per 2016-block
   period. `work(a,b)` is realised chainwork in hashes (O(log n) via prefix sums)
   and `w(t)` is the work of one block, `D(t)·2³²`.
-* `ESTIMATORS`: ways to guess the work of one block `T` ahead from `t ≤ t0` —
-  `flat`, `exp-1y`, `exp-2y`, `exp-2y-cap2x`, `ols-4y`, `ols-4y+2sd`, and the
-  recommended `plaw-4y` (power law anchored at `w0`, fitted over a trailing 4 y,
-  lifted one-sided by its own max past residual). `flatbar` is not an estimator:
-  expressed as `ŵ` it reproduces the age-proportional bar `w0·T/600`.
+* `ESTIMATORS`: ways to guess `ρ`, the work of one block `T` ahead relative to
+  `w0`, from `t ≤ t0` — `flat`, `exp-1y`, `exp-2y`, `exp-2y-cap2x`, `ols-4y`,
+  `ols-4y+2sd`, and the recommended `plaw-4y` (power law anchored at `w0`, fitted
+  over a trailing 4 y, lifted one-sided by its own max past residual).
   `FIRST = 5 y` scopes the tests to 2014+ (post-ASIC).
 * `plaw_window_rows` / `plaw_fit`: the one anchored power-law fit, shared by
   `plaw-4y` and the exp6/exp7 sweeps.
-* `bar`, `phi`, `finalize_time`: the rule, the dimensionless ratio
-  `Phi = bar/W_honest`, and the first staleness a candidate clears it.
+* `fixed_bar` / `age_bar` / `bar`: the two guards — `MATURITY·ρ` current blocks,
+  and the checkpoint's age in blocks `T/TARGET` — and their max, the recommended
+  rule. `MATURITY = 100` is the coinbase constant. `fixed_rule(est)` gives the
+  fixed guard as a rule callable.
+* `phi`, `finalize_time`: the dimensionless ratio `Phi = bar/W_honest`, and the
+  first staleness a candidate clears a given rule.
 
 Everything turns on `s < Phi ≤ 1`: honest finalises iff `Phi ≤ 1`, an `s`-fork
 is kept out iff `Phi > s`.
@@ -36,7 +39,7 @@ is kept out iff `Phi > s`.
 | file | figure | gist |
 |---|---|---|
 | `exp1_window.py` | `window.png` | `Phi(T)` decreases; the safe set is a window `[T_lo, T_hi)`, ratio ≈ `1/s` |
-| `exp2_estimator.py` | (table only) | error of `ŵ/w_true` vs `T`, the §4 table |
+| `exp2_estimator.py` | (table only) | error of the work estimate vs truth (`ŵ/w_true`) vs `T`, the §4 table |
 | `exp3_backtest.py` | `availability/security/phi_heatmap.png` | honest-denial rate and fork-pass rate over `(t0,T)` |
 | `exp4_horizon.py` | `horizon.png` | protection horizon `T_hi(s)` |
 | `exp5_bars.py` | `concept.png`, `bars.png` | schematics |
@@ -50,7 +53,7 @@ is kept out iff `Phi > s`.
 * Work per block is a power law, not an exponential: log-log fit R² 0.96 over
   2014–2026 vs 0.83 for a straight line; the realised growth rate decays with
   age (a power-law signature), which the exponential over-shoots.
-* Recommended estimator `plaw-4y` (2014+ checkpoints): `log10(what/wtrue)` 5th
+* Recommended estimator `plaw-4y` (2014+ checkpoints): `log10(ŵ/w_true)` 5th
   percentile is **+0.12 / +0.13 / +0.12 / +0.02** dex at 30 d / 90 d / 1 y / 2 y
   — **never under-shoots** — with median +0.33 / +0.35 / +0.52 / +0.76 (`exp-3y`
   for comparison: p5 −0.04 / −0.08 / −0.19 / −0.18, median +0.01 / +0.03 / +0.20
@@ -77,9 +80,9 @@ is kept out iff `Phi > s`.
   `T < 17 h`, where it adds no security (the flat bar is already safe) and merely
   delays the honest chain. Recorded so it is not re-tried.
 * **`min` is wrong**: it would let a fork through at short `T`.
-* **Why not "100 blocks" with a bigger constant?** A larger `THETA` scales
-  `T_hi` linearly, but any constant is still overtaken; only growth with `T`
-  works. The required `m(T) ≈ s·T/600` blocks is the exact statement.
+* **Why not "100 blocks" with a bigger constant?** A larger maturity constant
+  scales `T_hi` linearly, but any constant is still overtaken; only growth with
+  `T` works. The required `m(T) ≈ s·T/600` blocks is the exact statement.
 * The unanchored OLS trend is noisy *at zero staleness*: the fitted trend at
   `t0` need not equal actual `w(t0)`. Anchoring the fit at `w0` is what makes the
   power law usable.

@@ -62,7 +62,7 @@ def bars():
     # pick a recent-ish checkpoint with room to extrapolate
     i = min(range(len(M.BTC.rows)), key=lambda i: abs(M.BTC.x(M.BTC.t[i]) - (2021 - 2009)))
     t0 = M.BTC.t[i]
-    w0 = M.BTC.D(t0) * M.WORK            # work of one block at the checkpoint difficulty
+    w0 = M.BTC.w(t0)                     # work of one block at the checkpoint
     Ts = [3600 * 2 ** (k / 6) for k in range(0, 67)]
     Ts = [T for T in Ts if t0 + T <= M.BTC.t1]
 
@@ -73,9 +73,9 @@ def bars():
     for s, c in ((0.01, BLUE), (0.1, ORANGE), (0.34, RED)):
         ax.plot([T / 86400 for T in Ts], [s * w for w in honest], color=c, lw=1.6,
                 label=f"fork with {100*s:g}% of the hash rate")
-    ax.plot([T / 86400 for T in Ts], [M.bar(t0, T, "flat") / w0 for T in Ts],
+    ax.plot([T / 86400 for T in Ts], [M.fixed_bar(t0, T, "flat") / w0 for T in Ts],
             color=INK, lw=2.4, ls="--", label="fixed bar: 100 blocks")
-    ax.plot([T / 86400 for T in Ts], [M.bar(t0, T, "flatbar") / w0 for T in Ts],
+    ax.plot([T / 86400 for T in Ts], [M.age_bar(t0, T) / w0 for T in Ts],
             color="#8e44ad", lw=2.4, label="age bar: one block per 10 min of age")
     ax.set_xscale("log"); ax.set_yscale("log")
     figs.plain_log(ax, "x", [0.1, 1, 10, 100])

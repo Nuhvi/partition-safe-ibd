@@ -7,12 +7,12 @@
 For every historical compile-time checkpoint (2011+) and every staleness T we
 evaluate
 
-    Phi(t0,T) = THETA * what(t0,T) / W_honest(t0, t0+T)
+    Phi(t0,T) = bar(t0,T) / W_honest(t0, t0+T)
 
   * honest denied     when Phi > 1     (the real chain fails the bar)
   * fork of share s passes when Phi <= s
 
-and report both rates as a function of T, per estimator, plus a heatmap of Phi
+and report both rates as a function of T, per rule, plus a heatmap of Phi
 over (checkpoint year, staleness) for the recommended estimator.
 
 Outputs figures/availability.png, figures/security.png, figures/phi_heatmap.png.
@@ -27,9 +27,15 @@ SHARES = (0.001, 0.01, 0.05, 0.10, 0.34)
 ANCH_YEARS = [2014 + 0.25 * k for k in range(0, 50)]     # quarterly checkpoints (2014+)
 TS = [d * 86400 for d in
       (0.5, 1, 2, 3, 5, 7, 14, 21, 30, 45, 60, 90, 120, 180, 270, 365, 540, 730, 1095, 1460)]
-EST = "exp-2y-cap2x"
-REC = "flatbar"
-CURATED = ("flat", "exp-2y-cap2x", "flatbar", "ols-4y+2sd")
+EST = "exp-2y-cap2x"        # the fixed guard, capped growth
+REC = "age"                 # the age guard, for the heatmap
+# Each estimator name is the fixed guard (100 estimated-current blocks);
+# "age" is the estimator-free age bar.
+RULES = {}
+for name in ("flat", "age", "exp-2y", "exp-3y", "exp-4y", "exp-1y",
+             "exp-2y-cap2x", "ols-4y", "ols-4y+2sd", "plaw-4y"):
+    RULES[name] = M.age_bar if name == "age" else M.fixed_rule(name)
+CURATED = ("flat", "exp-2y-cap2x", "age", "ols-4y+2sd")
 
 
 def anchor(year):
@@ -37,12 +43,12 @@ def anchor(year):
     return M.BTC.t[i]
 
 
-def phi(t0, T, est):
+def phi(t0, T, rule):
     w = M.BTC.work(t0, t0 + T)
-    return M.bar(t0, T, est) / w if w > 0 else float("inf")
+    return RULES[rule](t0, T) / w if w > 0 else float("inf")
 
 
-def grid(est):
+def grid(rule):
     """[(year, T, phi)] over the anchor x staleness grid."""
     out = []
     for yr in ANCH_YEARS:
@@ -50,7 +56,7 @@ def grid(est):
         for T in TS:
             if t0 + T > M.BTC.t1:
                 continue
-            out.append((yr, T, phi(t0, T, est)))
+            out.append((yr, T, phi(t0, T, rule)))
     return out
 
 
@@ -68,16 +74,16 @@ def rates(rows):
 
 
 def main():
-    data = {est: rates(grid(est)) for est in M.ESTIMATORS}
+    data = {rule: rates(grid(rule)) for rule in RULES}
     days = [T / 86400 for T in TS]
 
     # ---- availability -----------------------------------------------------
     fig, ax = figs.plt.subplots(figsize=(10.5, 5.2))
-    cols = {"flat": GREY, "flatbar": "#148f77", "exp-2y": BLUE, "exp-1y": "#5dade2",
+    cols = {"flat": GREY, "age": "#148f77", "exp-2y": BLUE, "exp-1y": "#5dade2",
             "exp-2y-cap2x": INK, "ols-4y": ORANGE, "ols-4y+2sd": PURPLE}
     labels = {"flat": "flat (no growth)",
               "exp-2y-cap2x": "fixed 100 blocks",
-              "flatbar": "age bar (T/600 blocks)", "ols-4y+2sd": "OLS trend + 2 sd"}
+              "age": "age bar (T/600 blocks)", "ols-4y+2sd": "OLS trend + 2 sd"}
     for est, d in data.items():
         if est not in CURATED:
             continue
@@ -138,19 +144,19 @@ def main():
     # ---- tables -----------------------------------------------------------
     print(f"\navailability: %% of checkpoints denying the true chain")
     print("%-8s %s" % ("T", "".join("%-7s" % f"{d:g}d" for d in (1, 7, 30, 90, 365, 730, 1460))))
-    for est in M.ESTIMATORS:
-        d = data[est]
-        print("%-8s %s" % (est, "".join(
+    for rule in RULES:
+        d = data[rule]
+        print("%-8s %s" % (rule, "".join(
             "%-7s" % (f"{100*(1-d[T][1]):.0f}%" if T in d else "-")
             for T in (86400, 7*86400, 30*86400, 90*86400, 365*86400, 730*86400, 1460*86400))))
 
     print("\nsecurity: % of checkpoints where a fork of share s passes")
     SCOL = (86400, 7*86400, 30*86400, 90*86400, 365*86400, 730*86400, 1460*86400)
-    print("%-12s %-6s %s" % ("estimator", "s", "".join("%-7s" % f"{d/86400:g}d" for d in SCOL)))
-    for est in M.ESTIMATORS:
-        d = data[est]
+    print("%-12s %-6s %s" % ("rule", "s", "".join("%-7s" % f"{d/86400:g}d" for d in SCOL)))
+    for rule in RULES:
+        d = data[rule]
         for s in SHARES:
-            print("%-12s %-6s %s" % (est, f"{100*s:g}%", "".join(
+            print("%-12s %-6s %s" % (rule, f"{100*s:g}%", "".join(
                 "%-7s" % (f"{100*d[T][2][s]:.0f}%" if T in d else "-")
                 for T in SCOL)))
         print()
