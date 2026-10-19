@@ -2,8 +2,10 @@
 """Exp 4 - the protection horizon.
 
 For every checkpoint and share s, the first staleness at which a fork of share s
-clears the bar, T_hi(t0,s).  Its median over checkpoints is how long the rule
-holds; the 10th percentile is the unlucky case.
+clears the bar, T_hi(t0,s).  The median over the checkpoints that clear inside the
+data is how long the rule holds; the 10th percentile is the unlucky case; and the
+share that never clears is censoring, so a cell with a high censored share is not
+a real median.
 
 Outputs figures/horizon.png.
 """
@@ -18,42 +20,55 @@ RULES = {
     "ols-4y+2sd": M.fixed_rule("ols-4y+2sd"),
 }
 SGRID = (0.001, 0.003, 0.01, 0.03, 0.1, 0.2, 0.34, 0.49)
+ANCHORS = [r[1] for r in M.BTC.rows if M.BTC.x(r[1]) >= M.FIRST]
 
 
-def anchor(year):
-    i = min(range(len(M.BTC.rows)), key=lambda i: abs(M.BTC.x(M.BTC.t[i]) - (year - 2009)))
-    return M.BTC.t[i]
+def fmt(T):
+    if T is None:
+        return "never"
+    if T > 86400 * 60:
+        return f"{T/86400/365:.1f}y"
+    if T > 86400:
+        return f"{T/86400:.0f}d"
+    return f"{T/3600:.0f}h"
 
 
-def horizon_table():
-    anchors = [anchor(y) for y in (2014, 2016, 2018, 2020, 2022, 2024)]
-    print("protection horizon: T_hi(t0,s) = first staleness where a fork of share")
-    print("s clears the bar.  Median (10th pct) over checkpoints [2014+].\n")
-    print("%-14s %s" % ("rule", "".join("%-16s" % f"s={100*s:g}%" for s in SGRID)))
-    for rule, bar_fn in RULES.items():
+def horizons():
+    """{rule: {s: [T_hi or None per anchor]}} - computed once, used twice."""
+    return {rule: {s: [M.finalize_time(t0, s, bar_fn) for t0 in ANCHORS]
+                   for s in SGRID}
+            for rule, bar_fn in RULES.items()}
+
+
+def horizon_table(data):
+    n = len(ANCHORS)
+    print("protection horizon T_hi(t0,s): first staleness at which a fork of share s")
+    print(f"clears the bar.  All {n} 2014+ checkpoints.  Each cell is the median")
+    print("[10th pct] over the checkpoints that clear inside the data, and the share")
+    print("that never does.  A high censored share means the cell is not a real median.\n")
+    print("%-13s %s" % ("rule", "".join("%-24s" % f"s={100*s:g}%" for s in SGRID)))
+    for rule, per_s in data.items():
         cells = []
         for s in SGRID:
-            ts = [M.finalize_time(t0, s, bar_fn) for t0 in anchors]
+            ts = per_s[s]
             ok = sorted(t for t in ts if t)
+            cens = n - len(ok)
             if not ok:
-                cells.append("never")
+                cells.append("never (%d%%)" % round(100 * cens / n))
                 continue
             med = ok[len(ok) // 2]
             p10 = ok[int(0.1 * (len(ok) - 1))]
-            fmt = lambda T: (f"{T/86400/365:.1f}y" if T > 86400 * 60 else
-                             (f"{T/86400:.0f}d" if T > 86400 else f"{T/3600:.0f}h"))
-            cells.append(f"{fmt(med)} ({fmt(p10)})")
-        print("%-14s %s" % (rule, "".join("%-16s" % c for c in cells)))
+            cells.append(f"{fmt(med)} [{fmt(p10)}] {100*cens/n:.0f}%")
+        print("%-13s %s" % (rule, "".join("%-24s" % c for c in cells)))
 
 
-def fig_horizon():
+def fig_horizon(data):
     fig, ax = figs.plt.subplots(figsize=(10, 5.4))
     cols = {"flat": GREY, "exp-2y-cap2x": INK, "age": PURPLE, "ols-4y+2sd": ORANGE}
-    anchors = [anchor(y) for y in (2014.25 + 0.5 * k for k in range(0, 25))]
-    for rule, bar_fn in RULES.items():
+    for rule, per_s in data.items():
         xs, med, p10 = [], [], []
         for s in SGRID:
-            ts = sorted(t for t in (M.finalize_time(t0, s, bar_fn) for t0 in anchors) if t)
+            ts = sorted(t for t in per_s[s] if t)
             if not ts:
                 continue
             xs.append(100 * s)
@@ -67,14 +82,15 @@ def fig_horizon():
     ax.set_xlabel("attacker share of honest hash rate (%)")
     ax.set_ylabel("checkpoint age at which the fork passes (days)")
     ax.set_title("protection horizon: how long the checkpoint stays safe "
-                 "(solid = median checkpoint, dotted = 10th pct)")
+                 "(solid = median of the checkpoints that clear, dotted = 10th pct)")
     ax.legend(fontsize=8)
     figs.save(fig, "horizon.png")
 
 
 def main():
-    horizon_table()
-    fig_horizon()
+    data = horizons()
+    horizon_table(data)
+    fig_horizon(data)
 
 
 if __name__ == "__main__":

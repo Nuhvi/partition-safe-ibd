@@ -14,47 +14,53 @@ from figs import BLUE, GREEN, INK, ORANGE, RED, GREY
 
 
 def concept():
-    fig, ax = figs.plt.subplots(figsize=(11, 4.4))
-    ax.set_xlim(0, 100); ax.set_ylim(0, 7)
+    """The setup: a trusted spine to t0, two continuations from t0 (honest chain
+    and an s-share fork), and the node's clock."""
+    from matplotlib.patches import Rectangle
+
+    fig, ax = figs.plt.subplots(figsize=(11.5, 4.2))
+    ax.set_xlim(0, 100); ax.set_ylim(0, 6.8)
     ax.axis("off")
 
-    # trusted spine
-    ax.plot([2, 46], [4.6, 4.6], color=INK, lw=7, solid_capstyle="butt")
-    for x in range(2, 47, 4):
-        ax.plot([x, x], [4.0, 5.2], color=INK, lw=1.2)
-    ax.text(24, 5.6, "trusted header spine  (hardcoded at compile time)",
-            ha="center", color=INK, fontsize=10, weight="bold")
-    ax.plot(46, 4.6, "o", color=RED, ms=9)
-    ax.text(46, 3.7, "checkpoint  t0\n(difficulty D0)", ha="center", color=RED, fontsize=9)
+    x0, x1, x2 = 8, 44, 94          # spine start, checkpoint t0, t_now
+    bw, bh = 2.4, 0.5               # block size
+    y_hn, y_sp, y_fk = 5.5, 4.2, 2.5
 
-    # honest chain
-    for i in range(48, 97, 3):
-        ax.plot([i, i], [5.6, 6.4], color=GREEN, lw=2)
-    ax.plot([46, 96], [6.0, 6.0], color=GREEN, lw=1)
-    ax.text(72, 6.7, "honest chain: full network, work W_h",
-            ha="center", color=GREEN, fontsize=9, weight="bold")
+    def chain(xa, xb, y, gap, color):
+        x = xa
+        while x + bw <= xb + 1e-9:
+            ax.add_patch(Rectangle((x, y - bh / 2), bw, bh, facecolor=color,
+                                   edgecolor="white", lw=0.7, zorder=3))
+            x += bw + gap
 
-    # fork
-    for i in range(48, 97, 10):
-        ax.plot([i, i], [2.6, 3.3], color=ORANGE, lw=2)
-    ax.plot([46, 96], [2.95, 2.95], color=ORANGE, lw=1)
-    ax.text(72, 2.0, "fork seen while partitioned: share s, work s * W_h",
-            ha="center", color=ORANGE, fontsize=9, weight="bold")
+    chain(x0, x1, y_sp, 0.7, INK)
+    ax.text((x0 + x1) / 2, y_sp - bh / 2 - 0.3,
+            "trusted header spine — hard-coded at compile time",
+            ha="center", va="top", color=INK, fontsize=10, weight="bold")
 
-    # T arrow
-    ax.annotate("", xy=(96, 0.7), xytext=(46, 0.7),
+    chain(x1, x2, y_hn, 1.1, GREEN)
+    ax.text((x1 + x2) / 2, y_hn + bh / 2 + 0.3,
+            "honest chain — the whole network, work $W_h$",
+            ha="center", va="bottom", color=GREEN, fontsize=10, weight="bold")
+
+    chain(x1, x2, y_fk, 5.6, ORANGE)
+    ax.text((x1 + x2) / 2, y_fk - bh / 2 - 0.3,
+            "fork seen while partitioned — share $s$, work $s\\,W_h$",
+            ha="center", va="top", color=ORANGE, fontsize=10, weight="bold")
+
+    ax.plot(x1, y_sp, "o", color=RED, ms=9, zorder=6)
+    ax.text(x1 + 0.6, y_sp - 0.95, "checkpoint $t_0$\n(difficulty $D_0$)",
+            ha="left", va="top", color=RED, fontsize=9)
+
+    ax.plot([x2, x2], [1.15, 6.15], color=GREY, ls=(0, (5, 3)), lw=1.3, zorder=1)
+    ax.text(x2 + 0.8, 6.15, "$t_{\\mathrm{now}}$", ha="left", va="top",
+            color=GREY, fontsize=10)
+
+    ax.annotate("", xy=(x2, 1.35), xytext=(x1, 1.35),
                 arrowprops=dict(arrowstyle="<->", color=GREY, lw=1.6))
-    ax.text(71, 0.95, "T = t_now - t0   (the node's clock)",
-            ha="center", color=GREY, fontsize=9)
-    ax.plot(96, 0.7, "v", color=GREY, ms=6)
-    ax.text(97, 0.6, "t_now", color=GREY, fontsize=9)
+    ax.text((x1 + x2) / 2, 1.02, "$T = t_{\\mathrm{now}} - t_0$   (the node's clock)",
+            ha="center", va="top", color=GREY, fontsize=9)
 
-    ax.text(2, 1.6,
-            "rule:  finalize the candidate iff its work since t0  >=  the bar\n"
-            "       the bar is 100 blocks at the current difficulty, which the\n"
-            "       node estimates from the spine",
-            ha="left", va="center", fontsize=9, color=INK,
-            bbox=dict(boxstyle="round", fc="#f4f6f7", ec=GREY))
     figs.save(fig, "concept.png")
 
 

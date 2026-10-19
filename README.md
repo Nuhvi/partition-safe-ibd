@@ -302,21 +302,20 @@ was tuned on the same sample it is evaluated on (§7).
 post-ASIC regime). Horizons overlap, so read the rates as descriptive, not as
 independent trials.
 
-**Protection horizon.** Median over six yearly checkpoints, 2014–2024:
+**Protection horizon.** Median over all 342 post-2014 checkpoints, with the share
+of checkpoints that never clear the bar inside the data in parentheses:
 
 | rule | $s = 0.1\%$ | $s = 1\%$ | $s = 10\%$ | $s = 34\%$ |
 |---|---|---|---|---|
-| fixed 100 ($\rho = 1$) | 1.3 y | 0.2 y | 6 d | 2 d |
-| **age bar** | **5.2 y** | **6.6 y** | **2.4 y** | **1.5 y** |
-| log-log OLS + 2 sd | never | 0.2 y | 11 d | 3 d |
+| fixed 100 ($\rho = 1$) | 1.2 y (13%) | 0.2 y (2%) | 7 d (0%) | 2 d (0%) |
+| **age bar** | **8.4 y (94%)** | **5.5 y (74%)** | **2.6 y (63%)** | **2.0 y (35%)** |
+| log-log OLS + 2 sd | 2.7 y (87%) | 0.3 y (34%) | 11 d (15%) | 4 d (3%) |
 
-Read this table with care. At $s = 0.1\%$ five of the six checkpoints never cross
-the age bar before the data ends, so that cell is a single checkpoint (2014,
-5.2 y). At $s = 1\%$ four are censored, leaving 3.4 y and 6.6 y, and the cell is
-their median. That is also why the age-bar row is not monotone in $s$: a weaker
-attacker should never be easier to stop, and the underlying data does not say it
-is — the table just does not have the sample to show it. Treat it as a sketch of
-the shape, not a guarantee.
+The percentage is censoring: those checkpoints never clear the bar before the data
+ends, so the median is taken over the survivors. At $s = 0.1\%$ that is 94% of
+checkpoints, so 8.4 y is a *lower bound* on the age bar's true horizon, not a
+central estimate. As $s$ rises the censored share falls and the cell becomes a
+real median, which is why the age-bar row now falls monotonically in $s$.
 
 The "fixed 100" row is the clock-free variant $100\,w_0$ ($\rho = 1$); the security
 table below uses a capped-growth estimate, which is why its numbers differ
@@ -355,9 +354,7 @@ Same grid.
 | age bar | 30% | 30% | 28% | 16% | 4% | 0% |
 | full rule | 94% | 50% | 38% | 16% | 4% | 5% |
 
-The age-bar and fixed-100 rows are `exp3_backtest.py`. The full-rule rows are the
-same backtest evaluated with `model.bar`, and are not yet printed by that script
-(§7).
+The age-bar, fixed-100 and full-rule rows are all `exp3_backtest.py`.
 
 The full rule is much more expensive than the age bar at short staleness, because
 the 100-block floor binds until $T \approx 60\,000\,\rho$. It buys nothing in
@@ -426,16 +423,16 @@ measured.
    is then evaluated on, so "the 5th percentile never under-shoots" is in-sample.
    The 2-year p5 is only $+0.02$ dex, and at least one individual fit (2023) runs
    under the truth by about $25\%$ (§4).
-6. **Horizon and full-rule tables are thin.** The horizon table uses six
-   checkpoints, 2–5 of them censored at small $s$; re-running on every 2014+
-   checkpoint would give a usable distribution. `exp3_backtest.py` also evaluates
-   the age bar alone — the full-rule rows in §5 come from the same model but are not
-   printed by that script.
+6. **Horizon is censored.** Even over all 342 checkpoints, 94% never clear the age
+   bar at $s = 0.1\%$ and 74% at $s = 1\%$, so the §5 horizon medians for small
+   $s$ are over a small surviving subset and are lower bounds. `exp4_horizon.py`
+   prints the censored share next to each cell.
 7. **$\Phi$ is not monotone in $T$.** The fixed term can grow again after the age
-   term has dominated, so $\Phi$ can dip below 1 and later rise above it: in 86 of
-   339 2014+ checkpoints the bar at the end of the sample is above the honest
-   chain's work even though it was below it earlier. `finalize_time` only tests the
-   endpoint, so its "never" cells can hide an earlier crossing.
+   term has dominated, so a chain that cleared the bar can later fall below it: in
+   86 of 339 2014+ checkpoints the bar at the end of the sample is above the honest
+   chain's work even though it was below it earlier. A node only needs the first
+   crossing, which `finalize_time` reports, but the safe band is a window, not a
+   suffix.
 8. **$1/s$ floor.** Even a perfect bar cannot separate a fork once $s \ge \Phi$, so
    very small $s$ at long staleness is unattainable.
 

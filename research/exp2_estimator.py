@@ -59,6 +59,10 @@ def main():
     for est, d in data.items():
         cells = [f"{quant(d[T],0.05):+.2f}" for T in show]
         print("%-12s %-10s %s" % (est, "p5", "".join("%-9s" % c for c in cells)))
+    print()
+    for est, d in data.items():
+        cells = [f"{quant(d[T],0.95):+.2f}" for T in show]
+        print("%-12s %-10s %s" % (est, "p95", "".join("%-9s" % c for c in cells)))
 
 
 if __name__ == "__main__":

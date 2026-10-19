@@ -95,7 +95,7 @@ def fig():
 
 
 def table():
-    print("coverage of the self-calibrated band (anchored fit, all prior history)")
+    print("coverage of the self-calibrated band (anchored fit, trailing 4-year window)")
     print("band = max past residual; covered if  forward need <= band + log10(1/s)")
     print("%-7s %-10s %-10s %-10s"%("T","s=1%","s=34%","need<=band"))
     for T in (90, 365, 730, 1095):

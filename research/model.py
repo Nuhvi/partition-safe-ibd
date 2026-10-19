@@ -301,25 +301,41 @@ def phi(t0, T, bar_fn=bar, chain=BTC):
     return bar_fn(t0, T) / w if w > 0 else float("inf")
 
 
-def finalize_time(t0, share=1.0, bar_fn=bar, chain=BTC, t_end=None):
+def finalize_time(t0, share=1.0, bar_fn=bar, chain=BTC, t_end=None, n_scan=220):
     """First T (seconds) at which a candidate holding `share` of the honest
-    work clears the bar, or None.  share=1 is the honest chain, share=s a fork
-    that forked at t0 and has mined with that hash share ever since."""
+    work clears the bar, or None if it never does before `t_end`.
+
+    share=1 is the honest chain; share=s is a fork that forked at t0 and has
+    mined with that hash share ever since.
+
+    Phi is not monotone in T: the fixed term can re-bind after the age term has
+    dominated, so a candidate can clear the bar and later fall back below it.
+    Test the *first* crossing, not the endpoint: scan forward on a geometric
+    grid (4 steps per octave) for the first grid point that clears, then bisect
+    inside that bracket.
+    """
     t_end = t_end or chain.t1
     if t0 >= t_end:
         return None
-    # geometric scan (finalization times span hours to decades)
-    lo = 60.0
-    hi = t_end - t0
+
     def clears(T):
         return share * chain.work(t0, t0 + T) >= bar_fn(t0, T)
-    if clears(hi):
-        # bisect for the first crossing
-        for _ in range(80):
-            mid = math.sqrt(lo * hi)
-            if clears(mid):
-                hi = mid
-            else:
-                lo = mid
-        return hi
+
+    # finalization times span hours to decades
+    lo = 60.0
+    if clears(lo):
+        return lo
+    for k in range(1, n_scan):
+        hi = 60.0 * 2 ** (k / 4)
+        if t0 + hi > t_end:
+            return None
+        if clears(hi):
+            for _ in range(60):
+                mid = math.sqrt(lo * hi)
+                if clears(mid):
+                    hi = mid
+                else:
+                    lo = mid
+            return hi
+        lo = hi
     return None

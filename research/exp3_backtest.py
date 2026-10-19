@@ -35,7 +35,8 @@ RULES = {}
 for name in ("flat", "age", "exp-2y", "exp-3y", "exp-4y", "exp-1y",
              "exp-2y-cap2x", "ols-4y", "ols-4y+2sd", "plaw-4y"):
     RULES[name] = M.age_bar if name == "age" else M.fixed_rule(name)
-CURATED = ("flat", "exp-2y-cap2x", "age", "ols-4y+2sd")
+RULES["full"] = M.bar          # the recommended max(100*rho_plaw, T/600)
+CURATED = ("flat", "exp-2y-cap2x", "age", "full", "ols-4y+2sd")
 
 
 def anchor(year):
@@ -80,10 +81,13 @@ def main():
     # ---- availability -----------------------------------------------------
     fig, ax = figs.plt.subplots(figsize=(10.5, 5.2))
     cols = {"flat": GREY, "age": "#148f77", "exp-2y": BLUE, "exp-1y": "#5dade2",
-            "exp-2y-cap2x": INK, "ols-4y": ORANGE, "ols-4y+2sd": PURPLE}
+            "exp-2y-cap2x": INK, "ols-4y": ORANGE, "ols-4y+2sd": PURPLE,
+            "full": RED}
     labels = {"flat": "flat (no growth)",
               "exp-2y-cap2x": "fixed 100 blocks",
-              "age": "age bar (T/600 blocks)", "ols-4y+2sd": "OLS trend + 2 sd"}
+              "age": "age bar (T/600 blocks)",
+              "full": "full rule max(100 rho, T/600)",
+              "ols-4y+2sd": "OLS trend + 2 sd"}
     for est, d in data.items():
         if est not in CURATED:
             continue
