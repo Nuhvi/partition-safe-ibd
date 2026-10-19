@@ -1,34 +1,36 @@
 # Partition-safe IBD — resisting network partitioning during initial block download
 
-*Glossary.* **chainwork** — the total hashing effort in a chain: the sum of
-`D·2³²` hashes over its blocks, for block difficulty `D`. **spine / checkpoint** —
-Bitcoin's real headers, hard-coded up to a checkpoint `t0`. **finalize** — treat
-the chain as settled rather than waiting for the network (no further reorg
-expected). **attacker share `s`** — the attacker's fraction of the honest chain's
-hash rate, so its work over an interval is `s · W_honest`.
+*Glossary.* **chainwork** — the total hashing effort in a chain: the sum of the
+per-block work `w = D·2³²` over its blocks, for block difficulty `D`.
+**spine / checkpoint** — Bitcoin's real headers, hard-coded up to a checkpoint
+`t0`. **finalize** — treat the chain as settled rather than waiting for the
+network (no further reorg expected). **attacker share `s`** — the attacker's
+fraction of the honest chain's hash rate, so its work over an interval is
+`s · W_honest`.
 
 ## TL;DR
 
 Finalize the downloaded chain only once its chainwork since the checkpoint clears
 
-    C  ≥  max( 100 · w ,  w0 · T/600 )
+    C  ≥  max( 100 · ŵ ,  w0 · T/600 )
 
     C   =  the candidate's chainwork since the checkpoint t0
-    D̂   =  estimated difficulty now, from the spine (see below)
-    w   =  D̂ · 2³²     work of one block at that difficulty
+    ŵ   =  estimated work of one block now, from the spine (see below)
     w0  =  D0 · 2³²     work of one block at the checkpoint difficulty D0
     T   =  t_now − t0   the checkpoint's age, from the node's clock
 
-Estimate `D̂` as a **power law** in chain age:
+Estimate `ŵ` by fitting the **work per block directly** as a power law in chain
+age:
 
-    D̂(t0,T) = 10 ^ ( y0 + p · log10( age(t0+T) / age(t0) ) + r )
+    ŵ(t0,T) =  w0 · 10 ^ ( p · log10( age(t0+T) / age(t0) ) + r )
 
-anchored at the checkpoint (`y0 = log10 D0`), with slope `p` fitted over a
-trailing **4 years** and `r` the **residual band that same fit needed to contain
-its own history**. Over-estimating only delays finalization. Validated on 2014+
-checkpoints — the post-ASIC regime — its 5th percentile never under-shoots. The
-bar holds for **years** against a ~1% attacker; past that a node must adopt a
-newer checkpoint (upgrade) or fail closed rather than finalize.
+anchored at the checkpoint (the trend passes through `ŵ = w0` at `T = 0`; the
+band then lifts it), with slope `p` fitted over a trailing **4 years** and `r` the
+**residual band that same fit needed to contain its own history**. Over-estimating
+only delays finalization. Validated on 2014+ checkpoints — the post-ASIC regime —
+its 5th percentile never under-shoots. The bar holds for **years** against a ~1%
+attacker; past that a node must adopt a newer checkpoint (upgrade) or fail closed
+rather than finalize.
 
 ## The idea
 
@@ -45,26 +47,26 @@ with a **trusted header spine**: Bitcoin's real headers, hard-coded up to a
 checkpoint `t0`. From the spine it knows the network's historical **work rate**,
 and so can estimate how much work the network is doing *now*. It then refuses to
 finalize the chain it is downloading until that chain proves it carried
-comparable work — at least the work of `THETA = 100` blocks at the **estimated
-current** difficulty:
+comparable work — at least the work of `THETA = 100` blocks at the difficulty
+estimated to be **current**:
 
 ```
-C  ≥  THETA · w          w = the work of one block at the estimated current difficulty D̂
+C  ≥  THETA · ŵ          ŵ = the estimated work of one block now
 ```
 
 This is the **coinbase-maturity assumption applied to sync**: the network already
 treats producing 100 blocks at the current difficulty as out of reach, which is
-why a coinbase may be spent after 100 confirmations. We estimate the current
-difficulty on the high side, so the bar never under-counts, and anyone able to
-clear it could equally have reverted Bitcoin's last 100 blocks — a strictly more
-damaging attack we take to be practically impossible. The node needs only the
-spine and its own clock.
+why a coinbase may be spent after 100 confirmations. We estimate that per-block
+work on the high side, so the bar never under-counts, and anyone able to clear it
+could equally have reverted Bitcoin's last 100 blocks — a strictly more damaging
+attack we take to be practically impossible. The node needs only the spine and
+its own clock.
 
 Two properties do the work:
 
 * the spine is **fixed at compile time**, so a partition cannot rewrite it;
-* the bar is denominated in **current** difficulty, which the spine lets the node
-  *estimate* but an attacker cannot *forge* — work has to be hashed.
+* the bar is denominated in **current** work per block, which the spine lets the
+  node *estimate* but an attacker cannot *forge* — work has to be hashed.
 
 The one real design question is how far a *fixed* bar holds as the checkpoint
 ages. The reorg-equivalence argument above says nothing about time, and a fork's
@@ -88,30 +90,31 @@ history. (Experiments and lab notebook: [`research`](research).)
 * A **fixed** 100-block bar is overtaken with age: a minority fork keeps mining,
   so its work grows hour by hour while the bar stands still. It holds a 1%
   attacker for only ~70 days and a 34% attacker for ~2 days
-  ([`horizon.png`](diagrams/horizon.png)).
+  ([`horizon.png`](research/figures/horizon.png)).
 * So the bar must grow too. Keep 100 blocks as a **floor** and add the work a
   chain at the checkpoint difficulty would have done over the checkpoint's age
   `T = t_now − t0` — that is `T/600` blocks (`600` seconds per block, so ~17 h
-  buys 100). The bar is the larger of the two, `max(100·w, w0·T/600)`; past
+  buys 100). The bar is the larger of the two, `max(100·ŵ, w0·T/600)`; past
   ~17 h the age term wins and forks stay out for **years instead of days**
-  ([`bars.png`](diagrams/bars.png), [`security.png`](diagrams/security.png)).
-* The fragile part is guessing *today's* difficulty. Over-estimating is safe — it
-  only delays finalization. Under-estimating is what hurts: the bar sinks toward
-  the fork's work, which is a share `s` of the honest chain's, so the estimate
-  may come in at most `1/s` low — ~100× for a 1% attacker, but only ~3× for 34%
-  (§4).
-* Difficulty is a **power law**, not an exponential: over 2014–2026 a log-log
-  fit describes it far better (R² 0.96 vs 0.83), because growth decelerates with
-  age. The recommended estimate is that power law, anchored at the checkpoint,
-  lifted by the residual band that same fit needed for its own history — so its
-  low tail never under-shoots on 2014+ checkpoints
-  ([`plaw_band.png`](diagrams/plaw_band.png)).
+  ([`bars.png`](research/figures/bars.png),
+  [`security.png`](research/figures/security.png)).
+* The fragile part is guessing the work of a block *now*. Over-estimating is
+  safe — it only delays finalization. Under-estimating is what hurts: the bar
+  sinks toward the fork's work, which is a share `s` of the honest chain's, so
+  the estimate may come in at most `1/s` low — ~100× for a 1% attacker, but only
+  ~3× for 34% (§4).
+* Work per block is a **power law** in chain age, not an exponential: over
+  2014–2026 a log-log fit describes it far better (R² 0.96 vs 0.83), because
+  growth decelerates with age. The recommended estimate is that power law,
+  anchored at the checkpoint, lifted by the residual band that same fit needed
+  for its own history — so its low tail never under-shoots on 2014+ checkpoints
+  ([`plaw_band.png`](research/figures/plaw_band.png)).
 
 ---
 
 ## 1. The setup
 
-![setup](diagrams/concept.png)
+![setup](research/figures/concept.png)
 
 The node holds a spine of real headers to `t0` (one per retarget period is
 enough). A candidate that descends from the spine is accepted iff its work since
@@ -122,19 +125,19 @@ enough). A candidate that descends from the spine is accepted iff its work since
 **trusts** serves as the anchor — including a chain it finalized in an earlier
 session — and a fresher anchor means a smaller, cheaper bar (§5).
 
-Work is measured in hashes: a block at difficulty `D` contributes `D · 2³²`. Write
-`W_cand` for the candidate's chainwork since `t0`, `w = D̂ · 2³²` for one block at
-the estimated current difficulty, `w0 = D0 · 2³²` for one block at the checkpoint
-difficulty, and `THETA = 100` for the block bound. The node's test is
-`W_cand ≥ THETA · w`. Everything turns on the ratio of the bar to what the honest
-chain would have done (`W_honest`), a single dimensionless number:
+Work is measured in hashes: a block at difficulty `D` contributes the **work**
+`w = D · 2³²`. Write `W_cand` for the candidate's chainwork since `t0`, `ŵ` for
+the estimated work of one block now, and `w0 = D0 · 2³²` for one block at the
+checkpoint difficulty. The node's test is `W_cand ≥ THETA · ŵ`. Everything turns
+on the ratio of the bar to what the honest chain would have done (`W_honest`), a
+single dimensionless number:
 
 ```
-Phi(t0,T) = bar / W_honest = THETA · w / W_honest(t0, t0+T)
+Phi(t0,T) = bar / W_honest = THETA · ŵ / W_honest(t0, t0+T)
           = 600 · THETA · rho / (G · T)                     T in seconds
 
-G(T)   = mean difficulty over [t0,t0+T] / D0      (how much difficulty grew)
-rho    = D̂ / D0                                   (the node's estimate vs its start)
+G(T)   = mean work per block over [t0,t0+T] / w0   (how much work per block grew)
+rho    = ŵ / w0                                    (the node's estimate vs its start)
 ```
 
 * the **honest** chain finalizes iff `Phi ≤ 1`;
@@ -148,12 +151,12 @@ s  <  Phi(t0,T)  ≤  1                  (safe band)
 
 Too small and a fork slips through; too large and even the honest chain is
 denied. `Phi` falls as `T` grows, so the band is a **window in staleness**
-([`window.png`](diagrams/window.png)). Controlled overshoot of `D̂` (`rho>1`)
-raises `Phi`: it costs availability, never safety.
+([`window.png`](research/figures/window.png)). Controlled overshoot of `ŵ`
+(`rho>1`) raises `Phi`: it costs availability, never safety.
 
 ## 2. Why a fixed bar is overtaken
 
-![why the bar must grow](diagrams/bars.png)
+![why the bar must grow](research/figures/bars.png)
 
 The honest chain and an `s`-fork both accumulate work in proportion to the
 elapsed interval,
@@ -163,15 +166,15 @@ W_honest(T) ≈ (T/600) · G · w0            (T/600 = target blocks in the inte
 W_fork(T)   =  s · W_honest(T)
 ```
 
-so a **constant** bar `100·w` is crossed by the fork once its work reaches it,
-`s · W_honest(T) ≥ 100 · w`.
+so a **constant** bar `100·ŵ` is crossed by the fork once its work reaches it,
+`s · W_honest(T) ≥ 100 · ŵ`.
 
 The protection horizon is finite and shrinks with the attacker's share (median
 over 2014+ checkpoints):
 
 | rule | s=0.1% | s=1% | s=10% | s=34% |
 |---|---|---|---|---|
-| fixed 100 blocks (`100·w`) | 1.3 y | 0.2 y | 6 d | 2 d |
+| fixed 100 blocks (`100·ŵ`) | 1.3 y | 0.2 y | 6 d | 2 d |
 | **age bar (flat bar)** | **5.2 y** | **6.6 y** | **2.4 y** | **1.5 y** |
 | log-log trend fit (OLS) + 2 sd | never | 0.2 y | 11 d | 3 d |
 
@@ -179,7 +182,7 @@ The spread across checkpoints is wide: for the age bar, the worst tenth of
 checkpoints hold only 3.4 y at `s=1%` and 0.3 y at 34%, so read these as medians,
 not guarantees.
 
-![protection horizon](diagrams/horizon.png)
+![protection horizon](research/figures/horizon.png)
 
 Solving `Phi > s` gives the horizon
 
@@ -198,12 +201,12 @@ The second term, `w0 · T/600`, is `T/600` blocks at the checkpoint difficulty
 `D0` — the work a chain running at `D0` would have done. It asks `T/60000` times
 more than 100 current-difficulty blocks — 43× at 30 days, 526× at a year.
 
-![security](diagrams/security.png)
+![security](research/figures/security.png)
 
 | fraction of 2014+ checkpoints a fork PASSES | 1% fork | 34% fork |
 |---|---|---|
-| fixed 100 (`100·w`), at 90 d | **96%** | 100% |
-| fixed 100 (`100·w`), at 1 y | **100%** | 100% |
+| fixed 100 (`100·ŵ`), at 90 d | **96%** | 100% |
+| fixed 100 (`100·ŵ`), at 1 y | **100%** | 100% |
 | age bar, at 90 d | 0% | 0% |
 | age bar, at 1 y | 0% | 11% |
 | age bar, at 2 y | 3% | 40% |
@@ -211,14 +214,14 @@ more than 100 current-difficulty blocks — 43× at 30 days, 526× at a year.
 The cost is availability — the flat bar denies the true chain in drawdowns
 (`G<1`) and under short-interval block-count variance:
 
-![availability](diagrams/availability.png)
+![availability](research/figures/availability.png)
 
 | fraction of checkpoints that DENY the true chain | 1–7 d | 30 d | 90 d | 1 y | 2 y |
 |---|---|---|---|---|---|
-| fixed 100 (`100·w`) | 0% | 0% | 0% | 0% | 0% |
+| fixed 100 (`100·ŵ`) | 0% | 0% | 0% | 0% | 0% |
 | age bar (flat) | 30% | 28% | 16% | 4% | 0% |
 
-(The recommended `max(100·w, w0·T/600)` differs from the pure flat bar only for
+(The recommended `max(100·ŵ, w0·T/600)` differs from the pure flat bar only for
 `T ≲ 17 h`, where the 100-block floor delays the honest chain by design; it adds
 no security there, since the flat bar is already safe at short staleness.)
 
@@ -229,7 +232,7 @@ acceptable (§1), the age bar is the better operating point, and the 100-block
 rule is best used as its floor:
 
 ```
-bar(T) = max( 100 · w ,  w0 · T/600 )
+bar(T) = max( 100 · ŵ ,  w0 · T/600 )
 ```
 
 ## 4. The estimate must not under-shoot by more than `1/s`
@@ -241,23 +244,31 @@ finalization; the danger is under-shooting — the bar sinks toward the fork. So
 estimate may come in at most `1/s` **low**: 100× for a 1% attacker, only ~3× for
 34%.
 
-The recommended estimator is a **power law** in chain age. Difficulty is
-described far better by a power law than by an exponential — over 2014–2026 a
-log-log fit gives R² 0.96 against 0.83 for a straight line — because the realised
-growth rate *decays* with age, from ~1000×/yr in 2012 to ~1.5×/yr in the 2020s.
-That decay is the power-law signature (`rate ∝ 1/age`), and a constant-rate
-exponential cannot follow it. The estimate is
+The recommended estimator is a **power law in chain age**, fitted on the **work
+per block itself**. Work per block is described far better by a power law than by
+an exponential — over 2014–2026 a log-log fit gives R² 0.96 against 0.83 for a
+straight line — because the realised growth rate *decays* with age, from
+~1000×/yr in 2012 to ~1.5×/yr in the 2020s. That decay is the power-law signature
+(`rate ∝ 1/age`), and a constant-rate exponential cannot follow it. The estimate
+is
 
-    D̂(t0,T) = 10 ^ ( y0 + p · log10( age(t0+T) / age(t0) ) + r )
+    ŵ(t0,T) = w0 · 10 ^ ( p · log10( age(t0+T) / age(t0) ) + r )
 
-with `p` the least-squares slope of `log10(difficulty)` on `log10(age)` over a
-trailing **4-year** window, the fit **anchored** at `(age(t0), D0)` (`y0`) so its
-value at `t0` is exact; and the margin `r` is not a constant — it is the **largest
-residual that same fit needed to contain the history it was fitted to**. A stretch
-where difficulty wandered off the line gets a wider band, and the band is applied
-one-sided (upward), so over-shoot only delays finalization. The table ladders
-`D̂/D_true`; §1's `rho = D̂/D0` is relative to the checkpoint, the two differ by
-the growth factor `G`.
+with `p` the least-squares slope of `log10(work per block)` on `log10(age)` over a
+trailing **4-year** window, the fit **anchored** at `(age(t0), w0)` so its value
+at `t0` is exact; and the margin `r` is not a constant — it is the **largest
+residual that same fit needed to contain the history it was fitted to**. A
+stretch where difficulty wandered off the line gets a wider band, and the band is
+applied one-sided (upward), so over-shoot only delays finalization.
+
+Fitting work rather than difficulty is not a change of model, it is the same
+line: `log10 w = log10 D + log10 2³²` shifts every point by the same constant, so
+the slope, the residuals and the band are unchanged. What goes away is the
+`2³²` factor threaded through the algebra, and the separate `y0 = log10 D0`
+anchor — the fit is now anchored on `w0`, which is exactly the quantity the bar
+multiplies by 100. The bar is simply `THETA · ŵ` (§5). §1's `rho = ŵ/w0` is
+relative to the checkpoint; it differs from the accuracy table below by the
+growth factor `G`.
 
 **Scope.** The estimate is validated on 2014+ checkpoints, the post-ASIC regime.
 A fit to 2012–13 history under-shoots the ASIC transition badly (2,500×
@@ -265,7 +276,7 @@ difficulty in two years); the trailing-growth exponential absorbs that transitio
 by over-shooting instead, so this is a real limitation of the power-law form,
 traded for a much better low tail in the modern regime.
 
-| `log10(D̂/D_true)` (dex; 2.0 = 100×), 2014+ | 30 d (p5/p50/p95) | 90 d | 1 y | 2 y |
+| `log10(ŵ/w_true)` (dex; 2.0 = 100×), 2014+ | 30 d (p5/p50/p95) | 90 d | 1 y | 2 y |
 |---|---|---|---|---|
 | flat (no growth) | −0.11 / −0.03 / +0.02 | −0.34 / −0.07 / +0.04 | −0.84 / −0.24 / −0.04 | −1.45 / −0.49 / −0.20 |
 | growth, 3 y (exponential) | −0.04 / +0.01 / +0.11 | −0.08 / +0.03 / +0.31 | −0.19 / +0.20 / +1.04 | −0.18 / +0.51 / +1.96 |
@@ -274,25 +285,26 @@ traded for a much better low tail in the modern regime.
 
 Reading: the **flat** guess under-shoots whenever difficulty grows (the only
 unsafe direction), and the unanchored **log-log trend (OLS)** is poor even at one
-day — its value at `t0` sits far from actual difficulty, which anchoring at `D0`
-fixes. The recommended power law has the best low tail: its 5th percentile is
-*above* 1 at every horizon, so it never under-shoots in the 2014+ sample, at the
-cost of over-shoot from the self-calibrated band. A **fixed** multiple (e.g. ×50)
-would have to be sized for the worst era and then over-shoots everywhere else; a
-band that reflects how far the line actually wandered calibrates itself per
+day — its fitted value at `t0` sits far from the work actually in force there,
+which anchoring at `w0` fixes. The recommended power law has the best low tail:
+its 5th percentile is *above zero* at every horizon (the estimate never comes in
+under the truth), so it never under-shoots in the 2014+ sample, at the cost of
+over-shoot from the self-calibrated band. A **fixed** multiple (e.g. ×50) would
+have to be sized for the worst era and then over-shoots everywhere else; a band
+that reflects how far the line actually wandered calibrates itself per
 checkpoint.
 
-![the self-calibrated band](diagrams/plaw_band.png)
+![the self-calibrated band](research/figures/plaw_band.png)
 
-In [`plaw_band.png`](diagrams/plaw_band.png) the top panel shows four fits, each
-with the band it needed for its own history. The **bottom panel counts the same
-fits in blocks**: `100 · trend(t) / D_true(t)` blocks at the difficulty actually
-in force, since the bar is 100 blocks at the *estimate*. A point on a line is
-where a node is if it **starts syncing then**; `100` is a perfect estimate, above
-it an over-shoot (a delay), below it an under-shoot (the unsafe way). The recent
-fit sits below 100 near the end (it under-predicts); older fits run far above it,
-and the further back they start the higher they climb — the finite horizon in
-block terms.
+In [`plaw_band.png`](research/figures/plaw_band.png) the top panel shows four
+fits, each with the band it needed for its own history. The **bottom panel counts
+the same fits in blocks**: `100 · ŵ(t) / w_true(t)` blocks at the difficulty
+actually in force, since the bar is 100 blocks at the *estimate*. A point on a
+line is where a node is if it **starts syncing then**; `100` is a perfect
+estimate, above it an over-shoot (a delay), below it an under-shoot (the unsafe
+way). The recent fit sits below 100 near the end (it under-predicts); older fits
+run far above it, and the further back they start the higher they climb — the
+finite horizon in block terms.
 
 Each point is only the **first** bar, though. Once the chain clears it and those
 blocks are finalized, they become a new, trusted anchor, and the node measures
@@ -307,23 +319,23 @@ conservative. At 2 years ahead on 2014+ checkpoints the 5th percentile / median
 run `−0.34/+0.27` at 2 y, `−0.06/+0.57` at 3 y, `+0.02/+0.76` at 4 y,
 `+0.15/+0.88` at 5 y, up to `+1.32/+1.75` for the whole history — every window is
 inside the 34% tolerance, so the choice is about delay, not safety
-([`plaw_window.png`](diagrams/plaw_window.png)). **4 years** sits where the low
-tail first clears zero; 3 years is the lower-delay alternative if a slightly
-negative tail is acceptable.
+([`plaw_window.png`](research/figures/plaw_window.png)). **4 years** sits where
+the low tail first clears zero; 3 years is the lower-delay alternative if a
+slightly negative tail is acceptable.
 
-![window sweep](diagrams/plaw_window.png)
+![window sweep](research/figures/plaw_window.png)
 
 ## 5. Recommended rule
 
-1. Ship a spine to `t0`; anchor `D0`.
-2. Estimate current difficulty as a **power law** — anchored at `D0`, fitted
-   over a trailing 4 years, lifted by the residual band that same fit needed for
-   its own history: `D̂ = 10^(y0 + p·log10(age ratio) + r)`. Over-estimating is
-   safe, so the band is only a delay.
+1. Ship a spine to `t0`; anchor `w0`.
+2. Estimate the work of one block now as a **power law** — anchored at `w0`,
+   fitted over a trailing 4 years, lifted by the residual band that same fit
+   needed for its own history: `ŵ = w0 · 10^(p·log10(age ratio) + r)`.
+   Over-estimating is safe, so the band is only a delay.
 3. Finalize iff
 
    ```
-   W_cand(t0 → tip)  ≥  max( 100 · w ,  w0 · T/600 )
+   W_cand(t0 → tip)  ≥  max( 100 · ŵ ,  w0 · T/600 )
    ```
 
    i.e. **100 current blocks and at least the work a checkpoint-difficulty chain
@@ -354,8 +366,8 @@ a first-ever sync, or one whose stored chain has been rolled back.
 * **Late split.** A checkpoint older than a fork split hands the fork its prefix
   for free; no work-since-`t0` rule can help. Checkpoint freshness is the fix.
 * **The clock.** `T` and any tip-age gate come from the node's clock; header
-  timestamps only certify work. A fixed bar at *checkpoint* difficulty
-  (`100·w0`, i.e. `D̂ = D0`) is clock-free — its one genuine advantage over the
+  timestamps only certify work. A fixed bar at *checkpoint* work per block
+  (`100·w0`, i.e. `ŵ = w0`) is clock-free — its one genuine advantage over the
   rule here.
 * **`THETA`.** 100 is a *reversal* cost, not a *partition* cost; the two do not
   scale the same way in `T`. Treat 100 as a floor, not the whole bar.

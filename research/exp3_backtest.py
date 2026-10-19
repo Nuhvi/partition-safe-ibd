@@ -7,7 +7,7 @@
 For every historical compile-time checkpoint (2011+) and every staleness T we
 evaluate
 
-    Phi(t0,T) = THETA * Dhat(t0,T) * 2**32 / W_honest(t0, t0+T)
+    Phi(t0,T) = THETA * what(t0,T) / W_honest(t0, t0+T)
 
   * honest denied     when Phi > 1     (the real chain fails the bar)
   * fork of share s passes when Phi <= s

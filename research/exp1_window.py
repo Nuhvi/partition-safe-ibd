@@ -3,13 +3,13 @@
 
 For a fixed compile-time checkpoint t0 the node's threshold is
 
-    bar(T) = THETA * Dhat(t0,T) * 2**32
+    bar(T) = THETA * what(t0,T)
 
 and the honest chain carries W_h(T) since t0, so
 
-    Phi(T) = bar / W_h = THETA * (Dhat/D0) / (G(T) * T/600)
+    Phi(T) = bar / W_h = THETA * (what/w0) / (G(T) * T/600)
 
-with G(T) = mean difficulty over [t0,t0+T] / D0.  The honest chain finalizes iff
+with G(T) = mean work per block over [t0,t0+T] / w0.  The honest chain finalizes iff
 Phi <= 1; an s-attacker is kept out iff Phi > s.  Hence the *safe band*
 
     s < Phi(T) <= 1                                     (correct finalisation)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exp 6 - a self-calibrating power-law band.
 
-Idea: fit the difficulty power law to the trailing 4 years before a checkpoint
+Idea: fit the work-per-block power law to the trailing 4 years before a checkpoint
 t0, then draw the trend forward.  The margin the band needs is not imported from
 anywhere - it is the margin the *same line* needed, looking backwards, to contain
 the data it was fitted to (the largest residual of the fit).  Projected forward,
@@ -9,10 +9,10 @@ the band asks: does the future wander further off the line than the past did?
 
 For each checkpoint the figure plots (a) the trailing-4-year power-law trend,
 (b) that trend lifted by its own past max-residual - the band it needed to fit
-its own data, and (c) the realised difficulty.  The solid lines on the right
+its own data, and (c) the realised difficulty.  The solid lines on the bottom
 axis convert each trend to its cost in blocks: the rule's bar is 100 blocks at
 the *estimate*, so at any time it equals 100 * trend(t) / D_true(t) blocks at
-the difficulty actually in force.  100 = a perfect estimate; above = over-shoot
+the difficulty actually in force (what / w_true).  100 = a perfect estimate; above = over-shoot
 (delayed), below = under-shoot (the unsafe way).
 
 Outputs figures/plaw_band.png.
@@ -33,25 +33,14 @@ def year_of(t):
 
 
 def fit_past(t0):
-    """Anchored power law over all history <= t0.  Returns (pred_log10, max_resid)."""
-    x0 = math.log10(M.BTC.x(t0))
-    y0 = math.log10(M.BTC.D(t0))
-    num = den = 0.0
-    res = 0.0
-    rows = [r for r in M.BTC.rows
-            if M.BTC.x(r[1]) >= M.PLAW_FLOOR
-            and (t0 - M.PLAW_WIN * M.YEAR) <= r[1] <= t0 and r[2] > 0]
-    for r in rows:
-        x = math.log10(M.BTC.x(r[1]))
-        y = math.log10(r[2])
-        num += (x - x0) * (y - y0)
-        den += (x - x0) ** 2
-    p = num / den if den > 0 else 0.0
-    for r in rows:
-        x = math.log10(M.BTC.x(r[1]))
-        y = math.log10(r[2])
-        res = max(res, abs(y - (y0 + p * (x - x0))))
-    return (lambda T: y0 + p * math.log10(M.BTC.x(t0 + T) / M.BTC.x(t0))), p, res
+    """Anchored power law over the trailing window up to t0.
+    Returns (pred_log10, slope, max_resid)."""
+    rows = M.plaw_window_rows(t0, M.PLAW_WIN)
+    f = M.plaw_fit(t0, rows)
+    if f is None:
+        return (lambda T: math.log10(M.BTC.w(t0))), 0.0, 0.0
+    y0, x0, p, resid = f
+    return (lambda T: y0 + p * math.log10(M.BTC.x(t0 + T) / M.BTC.x(t0))), p, resid
 
 
 def fig():
@@ -65,7 +54,7 @@ def fig():
         pred, p, resid = fit_past(t0)
         Ts = [(t1 - t0) * k / 60 for k in range(0, 61)]
         xs = [year_of(t0 + T) for T in Ts]
-        ys = [10 ** pred(T) for T in Ts]
+        ys = [10 ** pred(T) / M.WORK for T in Ts]
         ax.plot(xs, ys, color=c, lw=1.6, ls="--", zorder=3,
                 label=f"fit to history ≤ {yr} (slope {p:.0f})")
         ax.fill_between(xs, ys, [y * 10 ** resid for y in ys], color=c, alpha=0.11, lw=0)
@@ -115,7 +104,7 @@ def table():
             if t0 + T * 86400 > M.BTC.t1:
                 continue
             pred, p, resid = fit_past(t0)
-            need = math.log10(M.BTC.D(t0 + T * 86400)) - pred(T * 86400)
+            need = math.log10(M.BTC.w(t0 + T * 86400)) - pred(T * 86400)
             tot += 1
             plain += need <= resid
             for s in (0.01, 0.34):

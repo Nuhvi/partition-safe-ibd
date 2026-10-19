@@ -9,28 +9,31 @@ The idea (see ../README.md for the write-up):
   tell whether the chain it is offered is the best chain.  It therefore refuses
   to finalize a candidate unless the candidate carries at least
 
-      bar(t0, t_now) = THETA * Dhat(t0, T) * 2**32          T = t_now - t0
+      bar(t0, t_now) = THETA * what(t0, T)          T = t_now - t0
 
-  of work since the checkpoint: the work of THETA (=100) blocks mined at the
-  *current* difficulty Dhat, which the node can only *estimate* from the trusted
-  history t <= t0.  THETA=100 is the Coinbase-maturity bound: 100 blocks at
-  current difficulty is assumed prohibitive.
+  of work since the checkpoint: THETA (=100) times the work of one block *now*,
+  which the node can only *estimate* from the trusted history t <= t0.
+  THETA=100 is the Coinbase-maturity bound: 100 blocks at current difficulty is
+  assumed prohibitive.
 
 Everything is measured in *hashes* (chainwork).  One block at difficulty D costs
-D * 2**32 hashes.  The realised hash rate over a difficulty period is
-blocks * D * 2**32 / (period duration), which is the only rate the data can
-support; the target rate D * 2**32 / 600 is used only for reference.
+D * 2**32 hashes; call that the block's *work*.  The realised hash rate over a
+difficulty period is blocks * work / (period duration), which is the only rate
+the data can support; the target rate work / 600 is used only for reference.
+The estimators below fit work directly, so 2**32 appears in exactly one place
+(Chain.w) instead of being carried through every formula.
 
 The whole analysis turns on one dimensionless ratio:
 
-      Phi(t0, T) = bar / W_honest = THETA * Dhat * 2**32 / W(t0, t0+T)
+      Phi(t0, T) = bar / W_honest = THETA * what / W(t0, t0+T)
 
-where W(t0, t0+T) is the honest chain's realised work since the checkpoint.
+where W(t0, t0+T) is the honest chain's realised work since the checkpoint and
+what is the estimated work of one block at t0+T.
 
   * the honest chain finalizes iff  Phi <= 1          (availability)
   * a fork of hash share s is kept out iff  Phi > s   (security)
 
-so the rule is correct exactly on   s < Phi <= 1.  Dhat is the node's estimate,
+so the rule is correct exactly on   s < Phi <= 1.  what is the node's estimate,
 so "how accurate must the estimate be?" becomes the central question.
 """
 import json
@@ -83,13 +86,16 @@ class Chain:
         i = min(max(i, 0), len(self.d) - 1)
         return self.d[i]
 
-    def mean_D(self, t0, t1):
-        """Work-weighted mean difficulty over [t0, t1]."""
-        w = self.work(t0, t1)
+    def w(self, t):
+        """Work of one block at the difficulty active at t (hashes)."""
+        return self.D(t) * WORK
+
+    def mean_w(self, t0, t1):
+        """Work-weighted mean work per block over [t0, t1]."""
         secs = t1 - t0
         if secs <= 0:
             return 0.0
-        return w / (secs / TARGET * WORK)
+        return self.work(t0, t1) / (secs / TARGET)
 
     def work(self, t0, t1):
         """Realised chainwork (hashes) over [t0, t1], O(log n).
@@ -116,41 +122,42 @@ class Chain:
 
 
     def G(self, t0, t1):
-        """mean difficulty over [t0,t1] / difficulty at t0 (the repo's G)."""
-        d0 = self.D(t0)
-        return self.mean_D(t0, t1) / d0 if d0 else float("nan")
+        """mean work per block over [t0,t1] / work per block at t0 (the repo's G)."""
+        w0 = self.w(t0)
+        return self.mean_w(t0, t1) / w0 if w0 else float("nan")
 
 
 BTC = Chain("BTC")
 
 
 # --------------------------------------------------------------------- estimators
-# A node only knows history up to t0.  Each estimator returns Dhat(t0, T): its
-# guess at the difficulty current at t_now = t0 + T.  `k` is an optional
-# conservatism factor (upper-confidence slack, in units of the extrapolation sd).
+# A node only knows history up to t0.  Each estimator returns what(t0, T): its
+# guess at the work of one block at t_now = t0 + T (hashes).  The bar is then
+# simply THETA * what.  `k` is an optional conservatism factor (upper-confidence
+# slack, in units of the extrapolation sd).
 
 def est_flat(t0, T, chain=BTC):
-    """No growth: current difficulty = checkpoint difficulty."""
-    return chain.D(t0)
+    """No growth: current work per block = checkpoint work per block."""
+    return chain.w(t0)
 
 
 def est_exp(t0, T, win_years=2.0, cap_per_year=None, chain=BTC):
-    """Extrapolate the trailing `win_years` difficulty growth exponentially."""
-    d0 = chain.D(t0)
-    dp = chain.D(t0 - win_years * YEAR)
-    if dp <= 0 or d0 <= 0:
-        return d0
-    g = (d0 / dp) ** (1.0 / win_years)
+    """Extrapolate the trailing `win_years` work-per-block growth exponentially."""
+    w0 = chain.w(t0)
+    wp = chain.w(t0 - win_years * YEAR)
+    if wp <= 0 or w0 <= 0:
+        return w0
+    g = (w0 / wp) ** (1.0 / win_years)
     if cap_per_year is not None:
         g = min(g, cap_per_year)
-    return d0 * g ** (T / YEAR)
+    return w0 * g ** (T / YEAR)
 
 
 def _ols_loglog(t0, win_years, chain=BTC):
-    """OLS of log10 D on log10 age over a trailing window; None if too short."""
+    """OLS of log10 work per block on log10 age; None if too short."""
     rows = [r for r in chain.rows
             if r[1] > GENESIS and (t0 - win_years * YEAR) <= r[1] <= t0]
-    pts = [(math.log10(chain.x(r[1])), math.log10(r[2])) for r in rows if r[2] > 0]
+    pts = [(math.log10(chain.x(r[1])), math.log10(chain.w(r[1]))) for r in rows if r[2] > 0]
     n = len(pts)
     if n < 6:
         return None
@@ -169,7 +176,7 @@ def est_ols(t0, T, win_years=4.0, k=0.0, chain=BTC):
     """Log-log trend extrapolation, optionally + k extrapolation sd (one-sided)."""
     m = _ols_loglog(t0, win_years, chain)
     if m is None:
-        return chain.D(t0)
+        return chain.w(t0)
     x = math.log10(chain.x(t0 + T))
     pred = m["a"] + m["b"] * x
     if k:
@@ -178,17 +185,49 @@ def est_ols(t0, T, win_years=4.0, k=0.0, chain=BTC):
     return 10 ** pred
 
 
+def plaw_window_rows(t0, win_years, chain=BTC):
+    """The rows the power law is fitted to: history in [t0 - win, t0], after
+    PLAW_FLOOR.  win_years=None means all history."""
+    lo = t0 - win_years * YEAR if win_years else -float("inf")
+    return [r for r in chain.rows
+            if chain.x(r[1]) >= PLAW_FLOOR and lo <= r[1] <= t0 and r[2] > 0]
+
+
+def plaw_fit(t0, rows, chain=BTC):
+    """Anchored power-law fit of work per block on chain age.
+
+    Returns (y0, x0, p, r): the log10 work per block and log10 age at the
+    checkpoint, the least-squares slope through that anchor, and the largest
+    residual the fit needed to contain `rows`.  None if the fit is degenerate.
+    """
+    y0 = math.log10(chain.w(t0))
+    x0 = math.log10(chain.x(t0))
+    num = den = 0.0
+    if len(rows) < 6:
+        return None
+    for r in rows:
+        x = math.log10(chain.x(r[1]))
+        num += (x - x0) * (math.log10(chain.w(r[1])) - y0)
+        den += (x - x0) ** 2
+    if den <= 0:
+        return None
+    p = num / den
+    r = max(abs(math.log10(chain.w(rw[1])) - (y0 + p * (math.log10(chain.x(rw[1])) - x0)))
+            for rw in rows)
+    return y0, x0, p, r
+
+
 def est_plaw(t0, T, win_years=PLAW_WIN, band=1.0, chain=BTC):
     """Recommended estimate: a power law in chain age, anchored at the
     checkpoint, lifted by the band the same fit needed for its own history.
 
-    BTC difficulty is a power law in chain age (log-log fit R^2 ~ 0.96 over
+    Work per block is a power law in chain age (log-log fit R^2 ~ 0.96 over
     2014-2026, vs 0.83 for an exponential): growth decelerates in proportion to
     age, so this tracks the curve instead of over-shooting it, roughly halving
     the over-shoot of the exponential estimate for the same low tail.
 
-    The fit is the (anchored) least-squares slope of log10(difficulty) on
-    log10(age) over a trailing 4-year window, forced through (age(t0), D0) so its
+    The fit is the (anchored) least-squares slope of log10(work per block) on
+    log10(age) over a trailing 4-year window, forced through (age(t0), w0) so its
     value at t0 is exact.  The margin is not a constant: it is r, the largest
     residual that *this* fit needed to contain the history it was fitted to -
     self-calibrating, so a stretch where difficulty wandered off the line gets a
@@ -201,31 +240,19 @@ def est_plaw(t0, T, win_years=PLAW_WIN, band=1.0, chain=BTC):
     real limitation of the power-law form - the trailing-growth exponential
     over-shoots that transition instead - traded for a better modern-era tail.
     """
-    y0 = math.log10(chain.D(t0))
-    x0 = math.log10(chain.x(t0))
-    num = den = 0.0
-    rows = [r for r in chain.rows
-            if chain.x(r[1]) >= PLAW_FLOOR and (t0 - win_years * YEAR) <= r[1] <= t0 and r[2] > 0]
-    if len(rows) < 6:
-        return chain.D(t0)
-    for r in rows:
-        x = math.log10(chain.x(r[1]))
-        y = math.log10(r[2])
-        num += (x - x0) * (y - y0)
-        den += (x - x0) ** 2
-    if den <= 0:
-        return chain.D(t0)
-    p = num / den
-    r = band * max(abs(math.log10(rw[2]) - (y0 + p * (math.log10(chain.x(rw[1])) - x0)))
-                   for rw in rows)
-    return 10 ** (y0 + p * math.log10(chain.x(t0 + T) / chain.x(t0)) + r)
+    w0 = chain.w(t0)
+    f = plaw_fit(t0, plaw_window_rows(t0, win_years, chain=chain), chain)
+    if f is None:
+        return w0
+    y0, x0, p, r = f
+    return 10 ** (y0 + p * math.log10(chain.x(t0 + T) / chain.x(t0)) + band * r)
 
 
 def est_flatbar(t0, T, chain=BTC):
     """Not a difficulty estimate - the *age-proportional* (flat) bar:
-    bar = D0 * (T/600) * 2**32.  Expressed as the Dhat that reproduces it:
-    Dhat = D0 * T/(600*THETA).  Included as the reference rule to beat."""
-    return chain.D(t0) * (T / (TARGET * THETA))
+    bar = w0 * (T/600).  Expressed as the work-per-block that reproduces it:
+    what = w0 * T/(600*THETA).  Included as the reference rule to beat."""
+    return chain.w(t0) * (T / (TARGET * THETA))
 
 
 ESTIMATORS = {
@@ -245,7 +272,7 @@ ESTIMATORS = {
 # --------------------------------------------------------------------- rule
 def bar(t0, T, est="flat", theta=THETA):
     """The work (hashes) a candidate must carry since t0.  T in seconds."""
-    return theta * ESTIMATORS[est](t0, T) * WORK
+    return theta * ESTIMATORS[est](t0, T)
 
 
 def phi(t0, T, est="flat", theta=THETA, chain=BTC):

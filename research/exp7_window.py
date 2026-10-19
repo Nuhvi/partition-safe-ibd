@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exp 7 - how the fit window changes the power-law trend.
 
-The estimator fits log10(difficulty) on log10(age) over a trailing window and
+The estimator fits log10(work per block) on log10(age) over a trailing window and
 extrapolates it.  The window is the one free choice: short windows adapt to the
 current regime but give noisy slopes; long windows are stable but slow to react.
 This figure shows the effect.
@@ -38,47 +38,30 @@ def anchor(year):
 
 
 def rowset(t0, win):
-    lo = M.FIRST if win == "skip" else M.PLAW_FLOOR
-    rows = []
-    for r in M.BTC.rows:
-        if r[2] <= 0 or M.BTC.x(r[1]) < lo or r[1] > t0:
-            continue
-        if isinstance(win, int) and r[1] < t0 - win * M.YEAR:
-            continue
-        rows.append(r)
-    return rows
+    if win == "skip":
+        return [r for r in M.BTC.rows
+                if r[2] > 0 and M.BTC.x(r[1]) >= M.FIRST and r[1] <= t0]
+    return M.plaw_window_rows(t0, None if win == "all" else win)
 
 
 def fit(t0, win):
     """Anchored slope and max residual over the chosen window."""
-    rows = rowset(t0, win)
-    if len(rows) < 6:
-        return None
-    x0 = math.log10(M.BTC.x(t0)); y0 = math.log10(M.BTC.D(t0))
-    num = den = 0.0
-    for r in rows:
-        x = math.log10(M.BTC.x(r[1])); y = math.log10(r[2])
-        num += (x - x0) * (y - y0); den += (x - x0) ** 2
-    if den <= 0:
-        return None
-    p = num / den
-    r = max(abs(math.log10(rw[2]) - (y0 + p * (math.log10(M.BTC.x(rw[1])) - x0))) for rw in rows)
-    return p, r, y0, x0
+    return M.plaw_fit(t0, rowset(t0, win))
 
 
 def trend(t0, T, win):
     f = fit(t0, win)
     if f is None:
-        return M.BTC.D(t0)
-    p, r, y0, x0 = f
+        return M.BTC.w(t0)
+    y0, x0, p, r = f
     return 10 ** (y0 + p * math.log10(M.BTC.x(t0 + T) / M.BTC.x(t0)))
 
 
 def est(t0, T, win):
     f = fit(t0, win)
     if f is None:
-        return M.BTC.D(t0)
-    p, r, y0, x0 = f
+        return M.BTC.w(t0)
+    y0, x0, p, r = f
     return 10 ** (y0 + p * math.log10(M.BTC.x(t0 + T) / M.BTC.x(t0)) + r)
 
 
@@ -104,7 +87,7 @@ def fig():
                 continue
             Ts = [(M.BTC.t1 - t0) * k / 60 for k in range(0, 61)]
             xs = [year_of(t0 + T) for T in Ts]
-            ys = [trend(t0, T, w) for T in Ts]
+            ys = [trend(t0, T, w) / M.WORK for T in Ts]
             c, ls, lab = styles[w]
             ax.plot(xs, ys, color=c, ls=ls, lw=2.6 if w == 4 else 1.4, label=lab)
             ax.plot([year_of(t0)], [M.BTC.D(t0)], "o", color=c, ms=4, zorder=6)
@@ -122,7 +105,7 @@ def fig():
     xs = list(range(len(WINS)))
     p5s, meds = [], []
     for w in WINS:
-        e = [math.log10(est(t0, 2 * M.YEAR, w) / M.BTC.D(t0 + 2 * M.YEAR))
+        e = [math.log10(est(t0, 2 * M.YEAR, w) / M.BTC.w(t0 + 2 * M.YEAR))
              for t0 in ANCH if t0 + 2 * M.YEAR < M.BTC.t1]
         p5s.append(quant(e, 0.05)); meds.append(quant(e, 0.5))
     ax.plot(xs, meds, "o-", color=INK, label="median (over-shoot = delay)")
@@ -136,7 +119,7 @@ def fig():
     ax.set_xticklabels([f"{w} y" if isinstance(w, int) else ("all" if w == "all" else "≥2014")
                         for w in WINS], fontsize=9)
     ax.set_xlabel("fit window")
-    ax.set_ylabel("log10(D̂/D_true) at 2 y  (dex)")
+    ax.set_ylabel("log10(ŵ/w_true) at 2 y  (dex)")
     ax.set_title("error vs window, 2014+ checkpoints, 2 years ahead")
     ax.legend(fontsize=8, loc="lower left")
     figs.save(fig, "plaw_window.png")
@@ -145,7 +128,7 @@ def fig():
 def table():
     print("2y-ahead error by fit window (2014+ checkpoints): p5 / median")
     for w in WINS:
-        e = [math.log10(est(t0, 2 * M.YEAR, w) / M.BTC.D(t0 + 2 * M.YEAR))
+        e = [math.log10(est(t0, 2 * M.YEAR, w) / M.BTC.w(t0 + 2 * M.YEAR))
              for t0 in ANCH if t0 + 2 * M.YEAR < M.BTC.t1]
         lab = f"{w} y" if isinstance(w, int) else ("all history" if w == "all" else "all >=2014")
         print(f"  {lab:12s} p5 {quant(e,.05):+.2f}  median {quant(e,.5):+.2f}  (n={len(e)})")
