@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Run every experiment in order.  Needs matplotlib (see the repo .venv)."""
+"""Run the model figures used by ../README.md."""
 import runpy
 import sys
 
-for mod in ("exp1_window", "exp2_estimator", "exp3_backtest",
-            "exp4_horizon", "exp5_bars", "exp6_band", "exp7_window"):
+for mod in ("estimated_hashrate", "estimated_work_history", "cost_5pct"):
     print(f"\n================ {mod} ================")
     sys.stdout.flush()
     runpy.run_module(mod, run_name="__main__")
-print("\nall figures in research/figures/")
+print("\nfigures in research/figures/")
