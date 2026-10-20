@@ -3,7 +3,8 @@
 import runpy
 import sys
 
-for mod in ("estimated_hashrate", "estimated_work_history", "cost_5pct"):
+for mod in ("estimated_hashrate", "estimated_work_history",
+            "estimated_work_backtest", "cost_5pct"):
     print(f"\n================ {mod} ================")
     sys.stdout.flush()
     runpy.run_module(mod, run_name="__main__")

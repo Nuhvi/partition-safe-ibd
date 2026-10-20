@@ -29,6 +29,7 @@ GENESIS = 1231006505          # 2009-01-03 18:15:05 UTC
 YEAR = 31557600.0             # Julian year, seconds
 TARGET = 600.0                # seconds per block
 WORK = 2 ** 32                # hashes per unit difficulty per block
+MATURITY = 100               # minimum bar (checkpoint blocks)
 
 # Price laws and the dbtc price -> difficulty conversion.
 PRICE_A_BOTTOM = -17.432
@@ -39,6 +40,7 @@ DBTC_D0 = 54621616002.15709
 DBTC_P0 = 455.91017420322737
 DBTC_B = 0.6734733015588255
 PRICE_P = PRICE_N_BOTTOM / DBTC_B
+PRICE_P_MED = PRICE_N_MEDIAN / DBTC_B
 
 
 def load(chain):
@@ -108,29 +110,50 @@ def estimated_hashrate(t, a=PRICE_A_BOTTOM, n=PRICE_N_BOTTOM):
 
 
 def actual_hashrate(t):
-    """Realised hashrate from the spine, EH/s."""
-    return BTC.w(t) / TARGET / 1e18
+    """Realised hashrate over the sampled period containing t, EH/s."""
+    i = min(max(bisect_right(BTC.t, t) - 1, 0), BTC.np - 1)
+    dt = BTC.t[i + 1] - BTC.t[i]
+    dh = BTC.h[i + 1] - BTC.h[i]
+    return dh * BTC.d[i] * WORK / dt / 1e18
 
 
 def anchor_r0(t0):
-    """Bottom-law estimated hashrate / actual hashrate at the checkpoint."""
+    """Bottom-law estimated hashrate / realised hashrate at the checkpoint."""
     return estimated_hashrate(t0) / actual_hashrate(t0)
 
 
-def price_bar(t0, T):
+def anchor_r0_median(t0):
+    return estimated_hashrate(t0, PRICE_A_MEDIAN, PRICE_N_MEDIAN) / actual_hashrate(t0)
+
+
+def price_bar(t0, T, p=PRICE_P):
     """Cumulative power-law work since t0, in checkpoint blocks."""
     a0 = BTC.x(t0)
     x = T / (YEAR * a0)
-    return a0 * YEAR / (TARGET * (PRICE_P + 1.0)) * \
-        ((1.0 + x) ** (PRICE_P + 1.0) - 1.0)
+    return a0 * YEAR / (TARGET * (p + 1.0)) * \
+        ((1.0 + x) ** (p + 1.0) - 1.0)
 
 
 def est_work_bar(t0, T):
-    """The estimated-work bar: r0 * cumulative power-law work."""
-    return anchor_r0(t0) * price_bar(t0, T)
+    """The estimated-work bar: max(MATURITY, r0 * cumulative power-law work)."""
+    return max(MATURITY, anchor_r0(t0) * price_bar(t0, T))
+
+
+def est_work_bar_median(t0, T):
+    return max(MATURITY, anchor_r0_median(t0) * price_bar(t0, T, PRICE_P_MED))
 
 
 def phi_est(t0, T):
     """Estimated-work bar / honest work.  <=1 live, >s keeps an s-fork out."""
     h = BTC.work(t0, t0 + T) / BTC.w(t0)
     return est_work_bar(t0, T) / h if h > 0 else float("inf")
+
+
+def phi_est_median(t0, T):
+    h = BTC.work(t0, t0 + T) / BTC.w(t0)
+    return est_work_bar_median(t0, T) / h if h > 0 else float("inf")
+
+
+def network_share_to_honest(s):
+    """An s share of the network is s/(1-s) of honest work."""
+    return s / (1.0 - s)

@@ -9,9 +9,10 @@ the model and the scripts that produce the figures it uses.
 |---|---|---|
 | `model.py` | — | spine, chainwork, power-law hashrate, estimated-work bar, $\Phi$ |
 | `estimated_hashrate.py` | `estimated_hashrate.png` | actual vs power-law hashrate, 2010–2026 |
-| `estimated_work_history.py` | `estimated_work_history.png` | $\Phi$ from selected checkpoints over the whole history; 5% safe, 10% not in 2018–20 |
-| `cost_5pct.py` | `cost_5pct.png` | 5% attacker: work cost + foregone profit |
-| `run_all.py` | — | runs the three scripts |
+| `estimated_work_history.py` | `estimated_work_history.png` | $\Phi$ over the whole history; selected anchors, worst anchor, median law |
+| `estimated_work_backtest.py` | — | all-checkpoint scan: min $\Phi$, network edge, median |
+| `cost_5pct.py` | `cost_5pct.png` | 5% attacker: energy cost + foregone profit |
+| `run_all.py` | — | runs the four scripts |
 
 `data/BTC.json` is the sampled header spine (one row per 2016-block period);
 `data/btc_price_raw.json` is the price history. `figs.py` holds the shared
