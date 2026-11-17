@@ -10,6 +10,8 @@ line is the median-law version of that worst anchor.
 
 Outputs figures/estimated_work_history.png.
 """
+import math
+
 import model as M
 import figs
 from figs import BLUE, GREEN, INK, ORANGE, PURPLE, RED
@@ -31,23 +33,30 @@ def year_of(t):
     return 2009 + M.BTC.x(t)
 
 
-def all_scan():
-    """Worst Phi and its anchor across all sampled 2016+ checkpoints."""
+def scan(phi=M.phi_est):
+    """Worst Phi, its anchor and T, and the number of sampled anchors."""
     best = (float("inf"), None, None)
+    n = 0
     for r in M.BTC.rows:
         t0 = r[1]
         if year_of(t0) < 2016 or t0 >= NOW - 86400:
             continue
+        n += 1
         for k in range(1, 80):
             T = (NOW - t0) * k / 80
-            p = M.phi_est(t0, T)
+            p = phi(t0, T)
             if p < best[0]:
                 best = (p, t0, T)
-    return best
+    return best + (n,)
 
 
 def fig():
-    worst, wt0, wT = all_scan()
+    worst, wt0, wT, n = scan()
+    med_min, _, _, _ = scan(M.phi_est_median)
+    t24 = anchor(2024)
+    phi24 = M.phi_est_median(t24, NOW - t24)
+    edge = worst / (1.0 + worst)
+
     fig, ax = figs.plt.subplots(figsize=(12.5, 5.2))
     ax.fill_between([year_of(t) for t in M.BTC.t], H5, 1.0,
                     color=figs.SAFE, alpha=0.7, zorder=0,
@@ -80,25 +89,31 @@ def fig():
     ax.set_ylim(0.03, 3)
     ax.set_yticks([0.03, H5, H10, 0.3, 1, 3])
     ax.set_yticklabels(["0.03", "0.0526", "0.1111", "0.3", "1", "3"])
-    ax.set_xlim(2010, 2027)
+    ax.set_xlim(2010, math.ceil(year_of(NOW)))
     ax.set_xlabel("year")
     ax.set_ylabel("Phi = bar / honest work")
-    ax.set_title("Phi over time: 5% network is safe; 10% network is not in 2016-20\n"
-                 "bottom law; worst of 285 sampled checkpoints: "
-                 f"{year_of(wt0):.2f}, Phi={worst:.4f} "
-                 f"(max network {100*worst/(1+worst):.2f}%); "
+    ax.set_title("Phi over time: 5% network is safe; 10% network is not in "
+                 "2016-20\nbottom law; worst of "
+                 f"{n} sampled checkpoints: {year_of(wt0):.2f}, "
+                 f"Phi={worst:.4f} (max network {100*edge:.2f}%); "
                  "5% line = 5.26% of honest work, 10% line = 11.11%")
     ax.legend(fontsize=7.5, loc="upper right", ncol=2)
     ax.grid(alpha=0.25)
+    note = " (above the honest limit)" if phi24 > 1.0 else ""
     ax.text(0.01, 0.03,
-            f"all 285 sampled 2016+ checkpoints: min Phi = {worst:.4f} "
+            f"all {n} sampled 2016+ checkpoints: min Phi = {worst:.4f} "
             f"({year_of(wt0):.2f})\n"
-            f"max network edge = {100*worst/(1+worst):.2f}%; "
-            "5% line = 0.0526 (3.7% margin)\n"
-            "median law: min Phi = 0.150; 10% is safe, 2024 end is marginal",
+            f"max network edge = {100*edge:.2f}%; 5% line = 0.0526 "
+            f"({100*(edge/0.05 - 1):.1f}% margin)\n"
+            f"median law: min Phi = {med_min:.3f}; "
+            f"2024 anchor now = {phi24:.2f}{note}",
             transform=ax.transAxes, va="bottom", fontsize=7.2,
             bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="0.7",
                       alpha=0.9))
+    print(f"worst Phi {worst:.5f} at {year_of(wt0):.2f}; "
+          f"max network {100*edge:.2f}%")
+    print(f"median law: min Phi {med_min:.5f}; "
+          f"2024 anchor now {phi24:.3f}")
     figs.save(fig, "estimated_work_history.png")
 
 

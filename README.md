@@ -47,9 +47,11 @@ the realised hashrate from the spine:
 ![estimated hashrate](research/figures/estimated_hashrate.png)
 
 The estimate is a trend, not a precise forecast. It is above the realised
-hashrate before 2014, below it in 2015–2021; the **median** law (orange) is
-close after 2022, while the **bottom** law (green) remains 2.5–4× low. On 2016+ checkpoints the bottom estimate is $0.08/0.22/0.34$ of
-actual (p5/median/p95); the median is $0.21/0.60/0.90$.
+hashrate before 2014 and below it in 2015–2021. In 2022–2025 the **median** law
+(orange) is close, while the **bottom** law (green) stays 3–4× low; in 2026 the
+median law is 1.1–1.7× actual and the bottom law is 0.4–0.65×. On 2016+
+checkpoints the bottom estimate is $0.08/0.23/0.50$ of actual
+(p5/median/p95); the median is $0.21/0.63/1.33$.
 
 Let $\hat h(T)$ be the cumulative power-law work since $t_0$, in checkpoint
 blocks, and let
@@ -99,14 +101,15 @@ anchor and the median-law version of it:
 
 ![estimated-work history](research/figures/estimated_work_history.png)
 
-The all-checkpoint scan covers 285 sampled 2016+ checkpoints. Under the bottom
+The all-checkpoint scan covers 290 sampled 2016+ checkpoints. Under the bottom
 law the minimum is $\Phi=0.0546$ at 2018.53, so the maximum safe **network**
-share is 5.18%; 5% is safe with a 3.7% margin. **6% is not safe.** The 10%
+share is 5.18%; 5% is safe with a 3.5% margin. **6% is not safe.** The 10%
 network line is crossed in 2016–20 under the bottom law. Under the median law
-the minimum is $\Phi=0.150$, so 10% is safe, and the 2024 anchor's observed
-2.7-year endpoint is $\Phi\approx1.03$ (marginal). The 5% result is therefore
-bottom-law, in-sample, and thin; it is not an absolute “conservative” claim.
-5% is simply the largest round network share below the sampled 5.18% edge.
+the minimum is $\Phi=0.150$, so 10% is safe at the worst anchor; the 2024
+anchor's observed 2.9-year endpoint is $\Phi\approx1.12$, above the honest
+limit. The 5% result is therefore bottom-law, in-sample, and thin; it is not an
+absolute “conservative” claim. 5% is simply the largest round network share
+below the sampled 5.18% edge.
 
 ## The cost of 5%
 
@@ -143,13 +146,13 @@ prices the 5% share, not the bar; the bar's share is the $\Phi$ above.
 * **The estimate is in-sample and not exact.** The price law is fitted on the
   same history used for the backtest; the bottom law is the security worst case
   (lowest bar), not a liveness guarantee. The median law already gives
-  $\Phi\approx1.03$ at the 2024 observed endpoint.
+  $\Phi\approx1.12$ at the 2024 observed endpoint.
 * **5% is thin, not a wide margin.** The sampled edge is 5.18% network; 5% has a
-  3.7% margin. 6% is not safe. The claim is “5% passes the sampled bottom-law
+  3.5% margin. 6% is not safe. The claim is “5% passes the sampled bottom-law
   backtest,” not “5% is conservative.”
 * **The honest chain has to stay live.** The rule is useful only while
   $\Phi\le1$. There is no 5-year extrapolation in the figure or the table; the
-  2024 observed 2.7-year endpoint is 0.386 under the bottom law and 1.03 under
+  2024 observed 2.9-year endpoint is 0.42 under the bottom law and 1.12 under
   the median.
 * **The $T=0$ floor and re-anchoring.** The 100-block floor prevents a
   zero-work finalization at $T=0$. Re-anchoring resets $T$ but not the floor.
@@ -182,6 +185,10 @@ cd research
 ../.venv/bin/python run_all.py
 ```
 
-The scripts are `estimated_hashrate.py`, `estimated_work_history.py`,
+`run_all.py` appends the newest header and price samples from mempool.space and
+blockchain.info to `research/data/`, then rebuilds the figures. It keeps the
+model constants fixed; nothing is refitted. Use `--offline` to rebuild from the
+stored samples only. The scripts are `refresh.py` (data),
+`estimated_hashrate.py`, `estimated_work_history.py`,
 `estimated_work_backtest.py`, and `cost_5pct.py`; `model.py` is the spine and
 the estimated-work bar. Data is in `research/data/`.

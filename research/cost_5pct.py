@@ -8,6 +8,7 @@ requires more than 5% of network work, so this 5% spend cannot create it.
 """
 import bisect
 import json
+import os
 
 import model as M
 import figs
@@ -19,7 +20,8 @@ SHARE = 0.05
 J_PER_TH = 25.0
 USD_PER_KWH = 0.05
 PRICES = [(p["x"], p["y"]) for p in
-          json.load(open("data/btc_price_raw.json"))["values"] if p["y"] > 0]
+          json.load(open(os.path.join(M.DATA, "btc_price_raw.json")))["values"]
+          if p["y"] > 0]
 PT = [p[0] for p in PRICES]
 
 
